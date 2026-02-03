@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # my-library
 
 ## 目的
@@ -160,3 +161,6 @@ npm run dev
 ```
 
 3. ブラウザで http://localhost:3000 にアクセス
+=======
+# my-library
+>>>>>>> origin/main
