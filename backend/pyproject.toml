@@ -1,0 +1,53 @@
+[project]
+name = "my-library"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.128.0",
+    "ruff>=0.15.0",
+    "uvicorn[standard]>=0.40.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = [
+    ".git",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".venv",
+    "alembic",
+]
+
+[tool.ruff.lint]
+fixable = ["ALL"]
+
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "N",   # pep8-naming
+    "PL",  # Pylint
+    "ASYNC", # flake8-async
+    "TID", # flake8-tidy-imports
+]
+
+ignore = [
+    "B905",
+    "PLR0913",
+    "E501",
+    "PLC0415",
+]
+
+[tool.ruff.lint.isort]
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.format]
+quote-style = "double"
+line-ending = "lf" 
