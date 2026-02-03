@@ -1,0 +1,16 @@
+# 依存関係
+node_modules/
+
+# ローカル環境変数
+.env
+.env*.local
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
