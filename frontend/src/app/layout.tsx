@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { Inter } from "next/font/google";
 import "./globals.css";
 
@@ -9,7 +10,7 @@ export const metadata: Metadata = {
   description: "所持しているマンガを管理するアプリケーション",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="ja">
       <body className={inter.className}>{children}</body>
