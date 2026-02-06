@@ -158,5 +158,90 @@ uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
 - ヘルスチェック: http://localhost:8000/health
 - API ドキュメント: http://localhost:8000/docs
 
+## コード品質管理
+
+### Lint・Format確認手順
+
+本プロジェクトではコード品質を保つため、lintとformatを導入。
+
+#### Frontend (Next.js/TypeScript)
+
+**使用ツール**: ESLint + Prettier
+
+##### Lintチェック
+```bash
+cd frontend
+npm run lint
+```
+- 合格: ` No ESLint warnings or errors`
+- エラー: 問題箇所と修正方法が表示される
+
+##### Formatチェック（確認のみ）
+```bash
+cd frontend
+npm run format:check
+```
+-  合格: `All matched files use Prettier code style!`
+-  エラー: フォーマットが必要なファイルが表示される
+
+##### Format適用（自動修正）
+```bash
+cd frontend
+npm run format
+```
+- エラーが出た場合のみ実行してコードを自動整形
+
+#### Backend (Python/FastAPI)
+
+**使用ツール**: ruff (lint) + black (format)
+
+##### Lintチェック
+```bash
+cd backend
+uv run ruff check .
+```
+-  合格: `All checks passed!`
+-  エラー: 問題箇所が表示される
+
+##### Lint自動修正
+```bash
+cd backend
+uv run ruff check . --fix
+```
+- 自動修正可能なlintエラーを修正
+
+##### Formatチェック（確認のみ）
+```bash
+cd backend
+uv run black --check .
+```
+-  合格: `All done! `
+-  エラー: `X files would be reformatted`
+
+##### Format適用（自動修正）
+```bash
+cd backend
+uv run black .
+```
+- エラーが出た場合のみ実行してコードを自動整形
+
+### コミット前の確認（推奨）
+
+コミット前に必ず以下を実行してください:
+
+```bash
+# Frontend確認
+cd frontend
+npm run lint
+npm run format:check
+
+# Backend確認
+cd backend
+uv run ruff check .
+uv run black --check .
+```
+
+
+
 
 
