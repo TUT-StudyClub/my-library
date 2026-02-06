@@ -49,7 +49,6 @@ env/
 
 # uv
 .uv/
-uv.lock
 .python-version
 
 # IDEs
