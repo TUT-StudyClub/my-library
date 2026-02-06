@@ -33,7 +33,7 @@ htmlcov/
 .tox/
 .coverage
 .coverage.*
-.cache
+.cache/
 nosetests.xml
 coverage.xml
 *.cover
@@ -67,3 +67,6 @@ uv.lock
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+# ruff
+.ruff_cache/

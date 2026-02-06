@@ -16,6 +16,7 @@ dev = [
     "pytest>=7.4.3",
     "black>=23.12.1",
     "ruff>=0.1.9",
+    "mypy>=1.10.0",
 ]
 
 [tool.ruff]
@@ -31,15 +32,30 @@ select = [
     "B",   # flake8-bugbear
     "C4",  # flake8-comprehensions
     "UP",  # pyupgrade
+    "D",   # pydocstyle (docstrings)
 ]
 ignore = [
     "E501",  # line too long (handled by black)
+    "D100",  # public module docstring (MVPでは必須にしない)
+    "D104",  # public package docstring (MVPでは必須にしない)
+    "D107",  # __init__ docstring (MVPでは必須にしない)
 ]
 
 [tool.ruff.lint.isort]
 known-first-party = ["my-library-backend"]
 
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
 [tool.black]
 line-length = 100
 target-version = ["py39"]
 include = '\.pyi?$'
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+exclude = "(\\.venv|\\.uv|\\.mypy_cache|node_modules)"

@@ -26,6 +26,7 @@
 my-library-main/
 ├── frontend/     # Next.js (TypeScript) フロントエンド
 ├── backend/      # FastAPI バックエンド
+├── docs/         # 開発ルール/運用ドキュメント
 └── README.md
 ```
 
@@ -43,8 +44,7 @@ my-library-main/
 #### Backend (.env)
 | 変数名 | 説明 | デフォルト値 |
 |--------|------|--------------|
-| RAKUTEN_APP_ID | 楽天APIアプリケーションID | - |
-| RAKUTEN_API_BASE_URL | 楽天Books API URL | https://app.rakuten.co.jp/services/api/BooksBook/Search/20170404 |
+| NDL_API_BASE_URL | NDL Search API URL | https://ndlsearch.ndl.go.jp/api/opensearch |
 | ALLOWED_ORIGINS | CORS許可オリジン | http://localhost:3000 |
 
 
@@ -55,7 +55,7 @@ my-library-main/
 cd backend
 uv sync
 cp .env.example .env
-uv run uvicorn main:app --reload --port 8000
+uv run uvicorn src.main:app --reload --port 8000
 ```
 
 2. Frontendを起動 (ポート3000)
@@ -67,6 +67,21 @@ npm run dev
 ```
 
 3. ブラウザで http://localhost:3000 にアクセス
+
+### ルートからの共通コマンド
+
+フロント/バックを一括で実行できます。
+
+```bash
+make lint
+make format
+make format-check
+make typecheck
+```
+
+### 開発ルール / PR運用
+
+最低限の共通ルールは [docs/DEVELOPMENT_RULES.md](docs/DEVELOPMENT_RULES.md) を参照してください。
 
 #### 起動手順
 
@@ -143,14 +158,13 @@ uv sync
 cp .env.example .env
 
 # .envファイルを編集して必要な値を設定
-# RAKUTEN_APP_ID=your_rakuten_application_id_here
-# RAKUTEN_API_BASE_URL=https://app.rakuten.co.jp/services/api/BooksBook/Search/20170404
+# NDL_API_BASE_URL=https://ndlsearch.ndl.go.jp/api/opensearch
 # ALLOWED_ORIGINS=http://localhost:3000
 ```
 
 開発サーバーを起動:
 ```bash
-uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
+uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 起動後、以下のエンドポイントが利用可能:

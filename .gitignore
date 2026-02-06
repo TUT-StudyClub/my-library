@@ -11,6 +11,14 @@ node_modules/
 *.swp
 *.swo
 
+# Cache
+.cache/
+.eslintcache
+.stylelintcache
+.turbo/
+.npm/
+.pnpm-store/
+
 # OS
 .DS_Store
 Thumbs.db

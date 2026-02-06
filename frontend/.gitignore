@@ -10,6 +10,12 @@
 /.next/
 /out/
 
+# cache
+.cache/
+.eslintcache
+.stylelintcache
+.turbo/
+
 # production
 /build
 
