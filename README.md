@@ -15,7 +15,7 @@
 - FastAPI
 - Python 3.9+
 - uvicorn
-- uv 
+- uv
 
 ### その他
 - API:国立国会図書館サーチ （マンガ情報取得）
@@ -255,7 +255,13 @@ uv run ruff check .
 uv run black --check .
 ```
 
+## 開発フロー
+1. `feature/` でブランチを切って作業する。
+2. 作業が完了したらPRを作成する。
+3. Approveを2件取得する。
+4. `main` へmergeする。
 
-
-
-
+## ルール
+- `main` への直接pushは禁止。
+- `feature/` ブランチ運用を徹底する。
+- レビュー必須（Approve 2件）。
