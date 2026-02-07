@@ -2,10 +2,8 @@ name: CI
 
 on:
   pull_request:
-    branches:
-      - main
-      - develop
-      - feature/**
+  push:
+    branches: ["main"]
 
 jobs:
   frontend:
