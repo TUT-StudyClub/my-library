@@ -47,6 +47,9 @@ my-library-main/
 | NDL_API_BASE_URL | NDL Search API URL | https://ndlsearch.ndl.go.jp/api/opensearch |
 | ALLOWED_ORIGINS | CORS許可オリジン | http://localhost:3000 |
 | DB_PATH | SQLite DBファイルパス | backend/data/library.db |
+| API_HOST | API起動ホスト（任意） | 0.0.0.0 |
+| API_PORT | API起動ポート（任意） | 8000 |
+| API_RELOAD | APIリロード有効化（任意） | true |
 
 
 ### クイックスタート
@@ -56,7 +59,7 @@ my-library-main/
 cd backend
 uv sync
 cp .env.example .env
-uv run uvicorn src.main:app --reload --port 8000
+uv run python -m src
 ```
 
 2. Frontendを起動 (ポート3000)
@@ -80,6 +83,7 @@ make format-check
 make typecheck
 make test
 make db-smoke
+make backend-run
 ```
 
 `make db-smoke` は backend 側で Series/Volume を1件ずつ登録し、直後に取得できることを確認します。  
@@ -197,13 +201,18 @@ cp .env.example .env
 # NDL_API_BASE_URL=https://ndlsearch.ndl.go.jp/api/opensearch
 # ALLOWED_ORIGINS=http://localhost:3000
 # DB_PATH=data/library.db
+# API_HOST=0.0.0.0
+# API_PORT=8000
+# API_RELOAD=true
 ```
 
 `DB_PATH` を未設定にした場合、SQLite DB は固定で `backend/data/library.db` に作成されます。
 
 開発サーバーを起動:
 ```bash
-uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+uv run python -m src
+# ルートディレクトリから起動する場合:
+# make backend-run
 ```
 
 起動後、以下のエンドポイントが利用可能:
