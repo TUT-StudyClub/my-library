@@ -43,6 +43,7 @@ def initialize_database() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_series_title ON series(title);
             CREATE INDEX IF NOT EXISTS idx_series_author ON series(author);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_volume_isbn ON volume(isbn);
             CREATE INDEX IF NOT EXISTS idx_volume_series_id ON volume(series_id);
             """)
 
