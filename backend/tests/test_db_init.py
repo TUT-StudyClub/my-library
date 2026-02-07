@@ -25,6 +25,54 @@ def test_initialize_database_creates_file_and_tables(monkeypatch, tmp_path):
     assert tables == {"series", "volume"}
 
 
+def test_initialize_database_adds_foreign_key_to_existing_volume_table(monkeypatch, tmp_path):
+    """既存 volume テーブルに外部キーが無い場合でも起動時に補正される."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    with sqlite3.connect(db_path) as connection:
+        connection.executescript("""
+            CREATE TABLE series (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                author TEXT,
+                publisher TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE volume (
+                isbn TEXT PRIMARY KEY,
+                series_id INTEGER NOT NULL,
+                volume_number INTEGER,
+                cover_url TEXT,
+                registered_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            INSERT INTO series (title, author, publisher) VALUES ('旧作品', '旧著者', '旧出版社');
+            INSERT INTO volume (isbn, series_id, volume_number, cover_url)
+            VALUES ('9780000000008', 1, 1, 'https://example.com/old-cover.jpg');
+            """)
+
+    initialize_database()
+
+    with connect() as connection:
+        foreign_keys = connection.execute("PRAGMA foreign_key_list('volume');").fetchall()
+        row_count = connection.execute(
+            "SELECT COUNT(*) FROM volume WHERE isbn = '9780000000008';"
+        ).fetchone()[0]
+
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "INSERT INTO volume (isbn, series_id, volume_number, cover_url) VALUES (?, ?, ?, ?);",
+                ("9780000000009", 999999, 2, "https://example.com/new-cover.jpg"),
+            )
+
+    assert any(
+        row[2] == "series" and row[3] == "series_id" and row[4] == "id" for row in foreign_keys
+    )
+    assert row_count == 1
+
+
 def test_connect_enables_foreign_keys(monkeypatch, tmp_path):
     """SQLite 接続で外部キー制約が常に有効化される."""
     db_path = tmp_path / "library.db"
@@ -93,4 +141,34 @@ def test_insert_rejects_duplicate_isbn(monkeypatch, tmp_path):
             connection.execute(
                 "INSERT INTO volume (isbn, series_id, volume_number, cover_url) VALUES (?, ?, ?, ?);",
                 ("9780000000001", series_id, 2, "https://example.com/cover-2.jpg"),
+            )
+
+
+def test_volume_requires_existing_series_via_foreign_key(monkeypatch, tmp_path):
+    """Volume の series_id には既存 series.id の外部キー制約がある."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    initialize_database()
+
+    with connect() as connection:
+        foreign_keys = connection.execute("PRAGMA foreign_key_list('volume');").fetchall()
+
+    assert any(
+        row[2] == "series" and row[3] == "series_id" and row[4] == "id" for row in foreign_keys
+    )
+
+
+def test_insert_rejects_volume_with_non_existing_series(monkeypatch, tmp_path):
+    """存在しない series_id への Volume 登録は拒否される."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    initialize_database()
+
+    with connect() as connection:
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "INSERT INTO volume (isbn, series_id, volume_number, cover_url) VALUES (?, ?, ?, ?);",
+                ("9780000000009", 999999, 1, "https://example.com/cover-9.jpg"),
             )
