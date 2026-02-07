@@ -1,9 +1,9 @@
-.PHONY: check backend-setup db-smoke lint format format-check typecheck
+.PHONY: check backend-setup db-smoke lint format format-check typecheck test
 
 FRONTEND_DIR := frontend
 BACKEND_DIR := backend
 
-check: lint format-check typecheck
+check: lint format-check typecheck test
 
 backend-setup:
 	@echo "== Backend setup =="
@@ -36,3 +36,7 @@ typecheck: backend-setup
 	cd $(FRONTEND_DIR) && npm run typecheck
 	@echo "== Backend typecheck =="
 	cd $(BACKEND_DIR) && uv run mypy src
+
+test: backend-setup
+	@echo "== Backend test =="
+	cd $(BACKEND_DIR) && uv run pytest -q
