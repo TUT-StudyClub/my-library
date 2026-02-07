@@ -67,6 +67,9 @@ data/*.db
 data/*.db-shm
 data/*.db-wal
 
+# Smoke command output
+data/register_fetch_result.json
+
 # mypy
 .mypy_cache/
 .dmypy.json
