@@ -46,6 +46,7 @@ my-library-main/
 |--------|------|--------------|
 | NDL_API_BASE_URL | NDL Search API URL | https://ndlsearch.ndl.go.jp/api/opensearch |
 | ALLOWED_ORIGINS | CORS許可オリジン | http://localhost:3000 |
+| DB_PATH | SQLite DBファイルパス | backend/data/library.db |
 
 
 ### クイックスタート
@@ -160,7 +161,10 @@ cp .env.example .env
 # .envファイルを編集して必要な値を設定
 # NDL_API_BASE_URL=https://ndlsearch.ndl.go.jp/api/opensearch
 # ALLOWED_ORIGINS=http://localhost:3000
+# DB_PATH=data/library.db
 ```
+
+`DB_PATH` を未設定にした場合、SQLite DB は固定で `backend/data/library.db` に作成されます。
 
 開発サーバーを起動:
 ```bash
