@@ -220,6 +220,25 @@ uv run python -m src
 - ヘルスチェック: http://localhost:8000/health
 - API ドキュメント: http://localhost:8000/docs
 
+#### curlでの疎通確認手順
+
+1. 別ターミナルでヘルスチェックにアクセスし、HTTPステータスを確認
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/health
+```
+
+2. `200` が表示されることを確認
+
+3. レスポンス本文を確認する場合（任意）
+```bash
+curl http://localhost:8000/health
+```
+
+期待されるレスポンス例:
+```json
+{"status":"ok","message":"API is running"}
+```
+
 ## コード品質管理
 
 ### Lint・Format確認手順
