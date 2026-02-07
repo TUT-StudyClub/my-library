@@ -27,7 +27,7 @@ jobs:
         run: npm run typecheck
 
   backend:
-    name: Backend Lint/Format
+    name: Backend Lint/Format/Typecheck/Test
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -46,4 +46,6 @@ jobs:
       - name: Format check
         run: uv run black --check .
       - name: Typecheck
-        run: uv run mypy src/main.py
+        run: uv run mypy src
+      - name: Test
+        run: uv run pytest -q
