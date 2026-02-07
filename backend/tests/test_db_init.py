@@ -1,5 +1,7 @@
 import sqlite3
 
+import pytest
+
 from src.db import connect, initialize_database
 
 
@@ -66,3 +68,29 @@ def test_insert_and_select_minimum_series_and_volume(monkeypatch, tmp_path):
         ).fetchone()
 
     assert row == ("テスト作品", "9780000000001", 1)
+
+
+def test_insert_rejects_duplicate_isbn(monkeypatch, tmp_path):
+    """同じ ISBN の巻は 2回登録できない."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    initialize_database()
+
+    with connect() as connection:
+        cursor = connection.execute(
+            "INSERT INTO series (title, author, publisher) VALUES (?, ?, ?);",
+            ("テスト作品", "テスト著者", "テスト出版社"),
+        )
+        series_id = cursor.lastrowid
+
+        connection.execute(
+            "INSERT INTO volume (isbn, series_id, volume_number, cover_url) VALUES (?, ?, ?, ?);",
+            ("9780000000001", series_id, 1, "https://example.com/cover-1.jpg"),
+        )
+
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "INSERT INTO volume (isbn, series_id, volume_number, cover_url) VALUES (?, ?, ?, ?);",
+                ("9780000000001", series_id, 2, "https://example.com/cover-2.jpg"),
+            )
