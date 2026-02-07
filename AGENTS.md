@@ -106,6 +106,7 @@ make typecheck
 - importは自動整形に従う
 - 改行コードはLF
 - 変更は最小限にし、無関係な整形を避ける
+- コメントと docstring は日本語で記述する
 - 命名:
   - 変数/関数: `lowerCamelCase`
   - 型/コンポーネント: `PascalCase`
