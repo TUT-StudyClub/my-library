@@ -1,5 +1,6 @@
 import os
 import sqlite3
+from collections.abc import Generator
 from pathlib import Path
 
 from src.config import resolve_db_path
@@ -12,9 +13,23 @@ def get_db_path() -> Path:
 
 def connect() -> sqlite3.Connection:
     """外部キーを有効化した SQLite 接続を作成する."""
-    connection = sqlite3.connect(get_db_path())
+    connection = sqlite3.connect(get_db_path(), check_same_thread=False)
     connection.execute("PRAGMA foreign_keys = ON;")
     return connection
+
+
+def get_db_connection() -> Generator[sqlite3.Connection, None, None]:
+    """FastAPI の依存関係で使う DB 接続を提供する."""
+    connection = connect()
+
+    try:
+        yield connection
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
 
 
 def _has_volume_series_foreign_key(connection: sqlite3.Connection) -> bool:
