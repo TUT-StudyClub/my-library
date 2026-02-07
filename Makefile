@@ -1,4 +1,4 @@
-.PHONY: check backend-setup db-smoke lint format format-check typecheck test
+.PHONY: check backend-setup backend-run db-smoke lint format format-check typecheck test
 
 FRONTEND_DIR := frontend
 BACKEND_DIR := backend
@@ -12,6 +12,10 @@ backend-setup:
 db-smoke: backend-setup
 	@echo "== Backend register->fetch smoke =="
 	cd $(BACKEND_DIR) && uv run python -m src.db_smoke --log-path data/register_fetch_result.json
+
+backend-run: backend-setup
+	@echo "== Backend API start =="
+	cd $(BACKEND_DIR) && uv run python -m src
 
 lint: backend-setup
 	@echo "== Frontend lint =="
