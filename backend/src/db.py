@@ -1,14 +1,13 @@
-import os
 import sqlite3
 from collections.abc import Generator
 from pathlib import Path
 
-from src.config import resolve_db_path
+from src.config import load_settings
 
 
 def get_db_path() -> Path:
     """解決済みの SQLite ファイルパスを返す."""
-    return resolve_db_path(os.getenv("DB_PATH"))
+    return load_settings().db_path
 
 
 def connect() -> sqlite3.Connection:
