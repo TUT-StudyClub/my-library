@@ -17,6 +17,36 @@ def connect() -> sqlite3.Connection:
     return connection
 
 
+def _has_volume_series_foreign_key(connection: sqlite3.Connection) -> bool:
+    """volume.series_id -> series.id の外部キーが定義済みか確認する."""
+    foreign_keys = connection.execute("PRAGMA foreign_key_list('volume');").fetchall()
+    return any(
+        row[2] == "series" and row[3] == "series_id" and row[4] == "id" for row in foreign_keys
+    )
+
+
+def _recreate_volume_with_foreign_key(connection: sqlite3.Connection) -> None:
+    """既存 volume テーブルを外部キー付き定義で再作成する."""
+    connection.executescript("""
+        ALTER TABLE volume RENAME TO volume_without_series_fk;
+
+        CREATE TABLE volume (
+            isbn TEXT PRIMARY KEY,
+            series_id INTEGER NOT NULL,
+            volume_number INTEGER,
+            cover_url TEXT,
+            registered_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY(series_id) REFERENCES series(id) ON DELETE CASCADE
+        );
+
+        INSERT INTO volume (isbn, series_id, volume_number, cover_url, registered_at)
+        SELECT isbn, series_id, volume_number, cover_url, registered_at
+        FROM volume_without_series_fk;
+
+        DROP TABLE volume_without_series_fk;
+        """)
+
+
 def initialize_database() -> None:
     """DBファイルと最小スキーマを作成する."""
     db_path = get_db_path()
@@ -40,7 +70,12 @@ def initialize_database() -> None:
                 registered_at TEXT NOT NULL DEFAULT (datetime('now')),
                 FOREIGN KEY(series_id) REFERENCES series(id) ON DELETE CASCADE
             );
+            """)
 
+        if not _has_volume_series_foreign_key(connection):
+            _recreate_volume_with_foreign_key(connection)
+
+        connection.executescript("""
             CREATE INDEX IF NOT EXISTS idx_series_title ON series(title);
             CREATE INDEX IF NOT EXISTS idx_series_author ON series(author);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_volume_isbn ON volume(isbn);
