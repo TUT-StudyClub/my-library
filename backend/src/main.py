@@ -32,6 +32,19 @@ class SeriesResponse(BaseModel):
     publisher: Optional[str]
 
 
+def _fetch_series_list(connection: sqlite3.Connection) -> list[SeriesResponse]:
+    """DBに登録済みの Series 一覧を取得する."""
+    rows = connection.execute("""
+        SELECT id, title, author, publisher
+        FROM series
+        ORDER BY created_at DESC, id DESC;
+        """).fetchall()
+
+    return [
+        SeriesResponse(id=row[0], title=row[1], author=row[2], publisher=row[3]) for row in rows
+    ]
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """アプリ起動時に一度だけ DB を初期化する."""
@@ -103,6 +116,12 @@ async def create_series(
         raise HTTPException(status_code=500, detail="failed to create series")
 
     return SeriesResponse(id=row[0], title=row[1], author=row[2], publisher=row[3])
+
+
+@app.get("/api/series", response_model=list[SeriesResponse])
+async def list_series(connection: Annotated[sqlite3.Connection, Depends(get_db_connection)]):
+    """登録済み Series 一覧を返す（最小読み取り例）."""
+    return _fetch_series_list(connection)
 
 
 @app.get("/api/series/{series_id}", response_model=SeriesResponse)
