@@ -1,31 +1,34 @@
-.PHONY: check lint format format-check typecheck
+.PHONY: check backend-setup lint format format-check typecheck
+
+FRONTEND_DIR := frontend
+BACKEND_DIR := backend
 
 check: lint format-check typecheck
 
-lint:
+backend-setup:
+	@echo "== Backend setup =="
+	cd $(BACKEND_DIR) && uv sync --extra dev
+
+lint: backend-setup
 	@echo "== Frontend lint =="
-	cd frontend && npm run lint
+	cd $(FRONTEND_DIR) && npm run lint
 	@echo "== Backend lint =="
-	cd backend && uv sync --extra dev
-	cd backend && uv run ruff check .
+	cd $(BACKEND_DIR) && uv run ruff check .
 
-format:
+format: backend-setup
 	@echo "== Frontend format =="
-	cd frontend && npm run format
+	cd $(FRONTEND_DIR) && npm run format
 	@echo "== Backend format =="
-	cd backend && uv sync --extra dev
-	cd backend && uv run black .
+	cd $(BACKEND_DIR) && uv run black .
 
-format-check:
+format-check: backend-setup
 	@echo "== Frontend format-check =="
-	cd frontend && npm run format:check
+	cd $(FRONTEND_DIR) && npm run format:check
 	@echo "== Backend format-check =="
-	cd backend && uv sync --extra dev
-	cd backend && uv run black --check .
+	cd $(BACKEND_DIR) && uv run black --check .
 
-typecheck:
+typecheck: backend-setup
 	@echo "== Frontend typecheck =="
-	cd frontend && npm run typecheck
+	cd $(FRONTEND_DIR) && npm run typecheck
 	@echo "== Backend typecheck =="
-	cd backend && uv sync --extra dev
-	cd backend && uv run mypy src/main.py
+	cd $(BACKEND_DIR) && uv run mypy src
