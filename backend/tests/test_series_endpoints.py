@@ -53,3 +53,29 @@ def test_create_series_rejects_blank_title(monkeypatch, tmp_path):
 
     assert response.status_code == 400
     assert response.json() == {"detail": "title is required"}
+
+
+def test_list_series_reads_existing_data_via_api(monkeypatch, tmp_path):
+    """DBに登録済みの Series を API 経由で取得できる."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    with TestClient(main.app) as client:
+        created_a = client.post(
+            "/api/series",
+            json={"title": "作品A", "author": "著者A", "publisher": "出版社A"},
+        )
+        created_b = client.post(
+            "/api/series",
+            json={"title": "作品B", "author": "著者B", "publisher": "出版社B"},
+        )
+
+        assert created_a.status_code == 201
+        assert created_b.status_code == 201
+
+        response = client.get("/api/series")
+
+    assert response.status_code == 200
+    listed_series = response.json()
+    assert len(listed_series) == 2
+    assert [item["title"] for item in listed_series] == ["作品B", "作品A"]
