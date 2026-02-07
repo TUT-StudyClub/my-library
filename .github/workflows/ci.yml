@@ -36,11 +36,11 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.11"
-      - name: Install uv
-        run: pip install uv
+          enable-cache: true
       - name: Install deps
         run: uv sync --extra dev
       - name: Lint
