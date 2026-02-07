@@ -78,11 +78,42 @@ make lint
 make format
 make format-check
 make typecheck
+make test
 make db-smoke
 ```
 
 `make db-smoke` は backend 側で Series/Volume を1件ずつ登録し、直後に取得できることを確認します。  
 結果は `backend/data/register_fetch_result.json` に保存されます。
+
+### 同一ISBN重複保存の検証手順
+
+`volume.isbn` のユニーク制約により、同じISBNは2回保存できません。  
+以下の手順でローカル/CIの両方で再現できます。
+
+#### ローカル
+
+```bash
+# backendテスト一式（重複ISBNテストを含む）
+make test
+
+# 重複ISBNテストのみを実行
+cd backend
+uv run pytest -q tests/test_db_init.py -k duplicate_isbn
+```
+
+期待結果:
+- `make test`: テストがすべて `passed`
+- 重複ISBNテスト: `1 passed`（同一ISBNの2回目INSERTは `sqlite3.IntegrityError` で失敗）
+
+#### CI
+
+GitHub Actions の `CI` ワークフロー `backend` ジョブで以下を実行します。
+
+```bash
+uv run pytest -q
+```
+
+上記に `test_insert_rejects_duplicate_isbn` が含まれるため、同一ISBN重複保存の拒否をCIでも検証できます。
 
 ### 開発ルール / PR運用
 
