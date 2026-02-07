@@ -1,4 +1,6 @@
-.PHONY: lint format format-check typecheck
+.PHONY: check lint format format-check typecheck
+
+check: lint format-check typecheck
 
 lint:
 	@echo "== Frontend lint =="
