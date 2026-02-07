@@ -78,7 +78,11 @@ make lint
 make format
 make format-check
 make typecheck
+make db-smoke
 ```
+
+`make db-smoke` は backend 側で Series/Volume を1件ずつ登録し、直後に取得できることを確認します。  
+結果は `backend/data/register_fetch_result.json` に保存されます。
 
 ### 開発ルール / PR運用
 
