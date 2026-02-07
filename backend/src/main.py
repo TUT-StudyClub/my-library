@@ -1,18 +1,38 @@
 import os
+import sqlite3
 from contextlib import asynccontextmanager
+from typing import Annotated, Optional
 
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
-from src.db import check_database_connection, initialize_database
+from src.db import check_database_connection, get_db_connection, initialize_database
 
 load_dotenv()
 
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8000
 DEFAULT_RELOAD = True
+
+
+class CreateSeriesRequest(BaseModel):
+    """Series 登録リクエスト."""
+
+    title: str = Field(min_length=1)
+    author: Optional[str] = None
+    publisher: Optional[str] = None
+
+
+class SeriesResponse(BaseModel):
+    """Series レスポンス."""
+
+    id: int
+    title: str
+    author: Optional[str]
+    publisher: Optional[str]
 
 
 @asynccontextmanager
@@ -59,6 +79,60 @@ async def health_check():
         raise HTTPException(status_code=503, detail="Database connection failed") from error
 
     return {"status": "ok", "message": "API is running"}
+
+
+@app.post("/api/series", response_model=SeriesResponse, status_code=status.HTTP_201_CREATED)
+async def create_series(
+    request_body: CreateSeriesRequest,
+    connection: Annotated[sqlite3.Connection, Depends(get_db_connection)],
+):
+    """Series を1件登録する."""
+    normalized_title = request_body.title.strip()
+    if normalized_title == "":
+        raise HTTPException(status_code=400, detail="title is required")
+
+    cursor = connection.execute(
+        """
+        INSERT INTO series (title, author, publisher)
+        VALUES (?, ?, ?);
+        """,
+        (normalized_title, request_body.author, request_body.publisher),
+    )
+    series_id = cursor.lastrowid
+    row = connection.execute(
+        """
+        SELECT id, title, author, publisher
+        FROM series
+        WHERE id = ?;
+        """,
+        (series_id,),
+    ).fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=500, detail="failed to create series")
+
+    return SeriesResponse(id=row[0], title=row[1], author=row[2], publisher=row[3])
+
+
+@app.get("/api/series/{series_id}", response_model=SeriesResponse)
+async def get_series(
+    series_id: int,
+    connection: Annotated[sqlite3.Connection, Depends(get_db_connection)],
+):
+    """Series を ID 指定で1件取得する."""
+    row = connection.execute(
+        """
+        SELECT id, title, author, publisher
+        FROM series
+        WHERE id = ?;
+        """,
+        (series_id,),
+    ).fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="Series not found")
+
+    return SeriesResponse(id=row[0], title=row[1], author=row[2], publisher=row[3])
 
 
 def _read_bool_env(key: str, default_value: bool) -> bool:
