@@ -146,6 +146,9 @@ export default function RegisterPage() {
   const [isSubmittingRegister, setIsSubmittingRegister] = useState(false);
   const [registerRequestStatus, setRegisterRequestStatus] = useState<RegisterRequestStatus>("idle");
   const [registerRequestMessage, setRegisterRequestMessage] = useState<string | null>(null);
+  const [isManualInputOpen, setIsManualInputOpen] = useState(false);
+  const [manualIsbnInput, setManualIsbnInput] = useState("");
+  const [manualInputErrorMessage, setManualInputErrorMessage] = useState<string | null>(null);
   const registerRequestPayload =
     confirmedIsbn === null
       ? null
@@ -164,6 +167,10 @@ export default function RegisterPage() {
     progressStatusLabel = "カメラ利用不可";
     nextActionLabel = "ブラウザのカメラ権限を確認して、再度「カメラ起動」を押してください。";
     progressTone = "error";
+  } else if (isManualInputOpen && confirmedIsbn === null) {
+    progressStatusLabel = "手入力待機中";
+    nextActionLabel = "手入力欄にISBNを入力し、「ISBNを反映」を押してください。";
+    progressTone = "neutral";
   } else if (isStartingCamera) {
     progressStatusLabel = "カメラ起動中";
     nextActionLabel = "プレビューが表示されるまで待ってください。";
@@ -300,6 +307,34 @@ export default function RegisterPage() {
     }
   }, [isCameraActive, isStartingCamera, stopCamera]);
 
+  const toggleManualInput = useCallback(() => {
+    if (isManualInputOpen) {
+      setIsManualInputOpen(false);
+      setManualInputErrorMessage(null);
+      return;
+    }
+
+    stopCamera();
+    setErrorMessage(null);
+    setIsbnErrorMessage(null);
+    setManualInputErrorMessage(null);
+    setManualIsbnInput(confirmedIsbn ?? "");
+    setIsManualInputOpen(true);
+  }, [confirmedIsbn, isManualInputOpen, stopCamera]);
+
+  const applyManualIsbn = useCallback(() => {
+    const normalizedIsbn = toNormalizedIsbn(manualIsbnInput);
+    if (normalizedIsbn === null) {
+      setConfirmedIsbn(null);
+      setManualInputErrorMessage(INVALID_ISBN_MESSAGE);
+      return;
+    }
+
+    setConfirmedIsbn(normalizedIsbn);
+    setIsbnErrorMessage(null);
+    setManualInputErrorMessage(null);
+  }, [manualIsbnInput]);
+
   const submitRegisterRequest = useCallback(async () => {
     if (isSubmittingRegisterRef.current) {
       return;
@@ -435,6 +470,60 @@ export default function RegisterPage() {
             >
               カメラ停止
             </button>
+          </div>
+
+          <div className={styles.manualInputSection}>
+            <button
+              aria-controls="manual-isbn-input-panel"
+              aria-expanded={isManualInputOpen}
+              className={styles.manualToggleButton}
+              onClick={toggleManualInput}
+              type="button"
+            >
+              {isManualInputOpen ? "手入力欄を閉じる" : "手入力でISBNを入力"}
+            </button>
+            {isManualInputOpen && (
+              <div className={styles.manualInputPanel} id="manual-isbn-input-panel">
+                <label className={styles.manualInputLabel} htmlFor="manual-isbn-input">
+                  ISBN手入力
+                </label>
+                <div className={styles.manualInputRow}>
+                  <input
+                    className={styles.manualInput}
+                    id="manual-isbn-input"
+                    inputMode="numeric"
+                    onChange={(event) => {
+                      setManualIsbnInput(event.target.value);
+                      setManualInputErrorMessage(null);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        applyManualIsbn();
+                      }
+                    }}
+                    placeholder="例: 9780000000000"
+                    type="text"
+                    value={manualIsbnInput}
+                  />
+                  <button
+                    className={styles.manualApplyButton}
+                    onClick={applyManualIsbn}
+                    type="button"
+                  >
+                    ISBNを反映
+                  </button>
+                </div>
+                <p className={styles.manualInputDescription}>
+                  ハイフンや空白を含んだ入力でも、正規化後に13桁であれば登録対象になります。
+                </p>
+                {manualInputErrorMessage !== null && (
+                  <p aria-live="polite" className={styles.errorText} role="status">
+                    {manualInputErrorMessage}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {errorMessage !== null && (
