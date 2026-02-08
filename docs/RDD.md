@@ -612,6 +612,126 @@
 * `GET /api/catalog/search?q=...&limit=...`（検索タブ用：候補＋所持判定）  
 * `GET /api/series/{series_id}/candidates`（作品詳細用：未登録候補。フィルタ＋重複排除済み）
 
+#### **8.2.1 GET /api/catalog/search（検索タブ候補取得）**
+
+検索タブでキーワード検索し、NDL Search の候補一覧を取得するエンドポイント。  
+本Story時点では **候補取得のみ** を返し、`owned`（所持判定）は含めない。
+
+**HTTPメソッド/パス**
+
+* `GET /api/catalog/search`
+
+**クエリパラメータ**
+
+| パラメータ | 型 | 必須 | 説明 |
+|---|---|---|---|
+| `q` | string | 必須 | 検索キーワード（作品名/著者名など） |
+| `limit` | number | 任意 | 取得件数。`1`〜`100`。未指定時は `10` |
+
+`q` と `limit` の扱いは以下で固定する。
+
+* `q` は必須（未指定は `422`）  
+* `q` が空文字または空白のみの場合は `400`（`INVALID_CATALOG_SEARCH_QUERY`）  
+* `limit` が `1` 未満または `100` 超の場合は `422`
+
+**リクエスト例**
+
+`GET /api/catalog/search?q=葬送のフリーレン&limit=3`
+
+**レスポンス（200 OK）**
+
+配列で返す。1要素が1候補。  
+並び順は NDL Search の応答順をそのまま使用する。
+
+| フィールド | 型 | `null` | 説明 |
+|---|---|---|---|
+| `title` | string | 不可 | 候補タイトル（シリーズ名） |
+| `author` | string | 可 | 著者名 |
+| `publisher` | string | 可 | 出版社名 |
+| `isbn` | string | 可 | ISBN-13（取得できない場合は `null`） |
+| `volume_number` | number | 可 | 巻数（取得できない場合は `null`） |
+| `cover_url` | string | 可 | 表紙URL（取得できない場合は `null`） |
+
+**レスポンス例（200 OK）**
+
+```json
+[
+  {
+    "title": "葬送のフリーレン",
+    "author": "山田鐘人",
+    "publisher": "小学館",
+    "isbn": "9784098515762",
+    "volume_number": 1,
+    "cover_url": "https://example.com/covers/frieren-1.jpg"
+  },
+  {
+    "title": "葬送のフリーレン",
+    "author": "山田鐘人",
+    "publisher": "小学館",
+    "isbn": null,
+    "volume_number": 2,
+    "cover_url": null
+  }
+]
+```
+
+**エラー例（400 Bad Request）**
+
+`q` が空文字または空白のみの場合。
+
+```json
+{
+  "error": {
+    "code": "INVALID_CATALOG_SEARCH_QUERY",
+    "message": "Catalog search query is invalid",
+    "details": {
+      "reason": "q must not be empty"
+    }
+  }
+}
+```
+
+**エラー例（422 Unprocessable Entity）**
+
+`q` 未指定、または `limit` 範囲外の場合。
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "リクエストパラメータが不正です。",
+    "details": {
+      "fieldErrors": [
+        {
+          "field": "query.q",
+          "reason": "Field required"
+        }
+      ]
+    }
+  }
+}
+```
+
+**エラー例（504 Gateway Timeout）**
+
+上流（NDL Search）がタイムアウトした場合。
+
+```json
+{
+  "error": {
+    "code": "NDL_API_TIMEOUT",
+    "message": "NDL API request timed out",
+    "details": {
+      "upstream": "NDL Search",
+      "externalFailure": true,
+      "failureType": "timeout",
+      "retryable": true,
+      "timeoutSeconds": 10
+    }
+  }
+}
+```
+
 ### **エラー形式（統一）**
 
 * エラー応答の正式仕様は `docs/DEVELOPMENT_RULES.md` の「APIエラーレスポンス規約」に従う  
