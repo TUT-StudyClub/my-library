@@ -134,6 +134,104 @@ def test_get_series_returns_not_found_error_when_series_does_not_exist(monkeypat
     }
 
 
+def test_delete_series_volumes_removes_series_and_get_returns_404(monkeypatch, tmp_path):
+    """全巻削除API実行後、Series取得APIは404を返す."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    def fetch_catalog_volume(isbn: str) -> main.CatalogVolumeMetadata:
+        if isbn.endswith("0001"):
+            return main.CatalogVolumeMetadata(
+                title="全削除作品",
+                author="全削除著者",
+                publisher="全削除出版社",
+                volume_number=1,
+                cover_url="https://example.com/covers/delete-all-1.jpg",
+            )
+
+        return main.CatalogVolumeMetadata(
+            title="全削除作品",
+            author="全削除著者",
+            publisher="全削除出版社",
+            volume_number=2,
+            cover_url="https://example.com/covers/delete-all-2.jpg",
+        )
+
+    monkeypatch.setattr(main, "_fetch_catalog_volume_metadata", fetch_catalog_volume)
+
+    with TestClient(main.app) as client:
+        create_response = client.post(
+            "/api/series",
+            json={"title": "全削除作品", "author": "全削除著者", "publisher": "全削除出版社"},
+        )
+        assert create_response.status_code == 201
+        series_id = create_response.json()["id"]
+
+        first_volume = client.post("/api/volumes", json={"isbn": "9780000000001"})
+        second_volume = client.post("/api/volumes", json={"isbn": "9780000000002"})
+        assert first_volume.status_code == 201
+        assert second_volume.status_code == 201
+
+        delete_response = client.delete(f"/api/series/{series_id}/volumes")
+        get_response = client.get(f"/api/series/{series_id}")
+
+    assert delete_response.status_code == 200
+    assert delete_response.json() == {
+        "deleted": {
+            "seriesId": series_id,
+            "deletedVolumeCount": 2,
+        }
+    }
+
+    assert get_response.status_code == 404
+    assert get_response.json() == {
+        "error": {
+            "code": "SERIES_NOT_FOUND",
+            "message": "Series not found",
+            "details": {"seriesId": series_id},
+        }
+    }
+
+    with sqlite3.connect(db_path) as connection:
+        series_count = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM series
+            WHERE id = ?;
+            """,
+            (series_id,),
+        ).fetchone()
+        volume_count = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM volume
+            WHERE series_id = ?;
+            """,
+            (series_id,),
+        ).fetchone()
+
+    assert series_count == (0,)
+    assert volume_count == (0,)
+
+
+def test_delete_series_volumes_returns_not_found_when_series_does_not_exist(monkeypatch, tmp_path):
+    """未登録Seriesの全巻削除で 404 の統一エラーを返す."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    with TestClient(main.app) as client:
+        response = client.delete("/api/series/999999/volumes")
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "error": {
+            "code": "SERIES_NOT_FOUND",
+            "message": "Series not found",
+            "details": {"seriesId": 999999},
+        }
+    }
+
+
 def test_create_series_rejects_blank_title(monkeypatch, tmp_path):
     """Series 登録APIは空タイトルを拒否する."""
     db_path = tmp_path / "library.db"
