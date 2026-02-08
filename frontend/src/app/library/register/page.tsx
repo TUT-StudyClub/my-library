@@ -16,6 +16,9 @@ const DEFAULT_REGISTER_ERROR_MESSAGE = "登録に失敗しました。";
 const REGISTER_REQUEST_ERROR_MESSAGE = "登録リクエストの送信に失敗しました。";
 const REGISTER_SUCCESS_MESSAGE = "登録完了";
 const REGISTER_ALREADY_EXISTS_MESSAGE = "このISBNは既に登録済みです。";
+const REGISTER_IGNORED_RECENT_MESSAGE =
+  "同じISBNを連続登録しないため、しばらく待ってから再実行してください。";
+const RECENT_PROCESSED_ISBN_IGNORE_MILLISECONDS = 10_000;
 const IGNORABLE_SCAN_ERROR_NAMES = new Set([
   "NotFoundException",
   "ChecksumException",
@@ -23,7 +26,13 @@ const IGNORABLE_SCAN_ERROR_NAMES = new Set([
 ]);
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
-type RegisterRequestStatus = "idle" | "success" | "alreadyExists" | "invalidIsbn" | "failure";
+type RegisterRequestStatus =
+  | "idle"
+  | "success"
+  | "alreadyExists"
+  | "recentlyProcessed"
+  | "invalidIsbn"
+  | "failure";
 
 function normalizeScannedText(rawText: string): string {
   return rawText.normalize("NFKC").trim();
@@ -131,6 +140,8 @@ export default function RegisterPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isbnErrorMessage, setIsbnErrorMessage] = useState<string | null>(null);
   const isSubmittingRegisterRef = useRef(false);
+  const latestProcessedIsbnRef = useRef<string | null>(null);
+  const latestProcessedAtMillisecondsRef = useRef(0);
   const [isSubmittingRegister, setIsSubmittingRegister] = useState(false);
   const [registerRequestStatus, setRegisterRequestStatus] = useState<RegisterRequestStatus>("idle");
   const [registerRequestMessage, setRegisterRequestMessage] = useState<string | null>(null);
@@ -237,6 +248,18 @@ export default function RegisterPage() {
       return;
     }
 
+    const nowMilliseconds = Date.now();
+    const isDuplicateWithinIgnoreWindow =
+      latestProcessedIsbnRef.current === confirmedIsbn &&
+      nowMilliseconds - latestProcessedAtMillisecondsRef.current <
+        RECENT_PROCESSED_ISBN_IGNORE_MILLISECONDS;
+    if (isDuplicateWithinIgnoreWindow) {
+      setRegisterRequestStatus("recentlyProcessed");
+      setRegisterRequestMessage(REGISTER_IGNORED_RECENT_MESSAGE);
+      return;
+    }
+
+    const requestIsbn = confirmedIsbn;
     isSubmittingRegisterRef.current = true;
     setRegisterRequestStatus("idle");
     setRegisterRequestMessage(null);
@@ -249,9 +272,11 @@ export default function RegisterPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          isbn: confirmedIsbn,
+          isbn: requestIsbn,
         }),
       });
+      latestProcessedIsbnRef.current = requestIsbn;
+      latestProcessedAtMillisecondsRef.current = Date.now();
 
       if (!response.ok) {
         const errorPayload = (await response.json().catch(() => null)) as unknown;
@@ -274,7 +299,7 @@ export default function RegisterPage() {
       }
 
       const successPayload = (await response.json().catch(() => null)) as unknown;
-      const registeredIsbn = extractRegisteredIsbn(successPayload) ?? confirmedIsbn;
+      const registeredIsbn = extractRegisteredIsbn(successPayload) ?? requestIsbn;
       setRegisterRequestStatus("success");
       setRegisterRequestMessage(`${REGISTER_SUCCESS_MESSAGE}（ISBN: ${registeredIsbn}）`);
     } catch {
@@ -394,7 +419,8 @@ export default function RegisterPage() {
               className={
                 registerRequestStatus === "success"
                   ? styles.successText
-                  : registerRequestStatus === "alreadyExists"
+                  : registerRequestStatus === "alreadyExists" ||
+                      registerRequestStatus === "recentlyProcessed"
                     ? styles.infoText
                     : styles.errorText
               }
