@@ -29,4 +29,10 @@ def test_health_returns_503_when_database_check_fails(monkeypatch, tmp_path):
         response = client.get("/health")
 
     assert response.status_code == 503
-    assert response.json() == {"detail": "Database connection failed"}
+    assert response.json() == {
+        "error": {
+            "code": "SERVICE_UNAVAILABLE",
+            "message": "Database connection failed",
+            "details": {},
+        }
+    }
