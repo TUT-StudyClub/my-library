@@ -497,6 +497,116 @@
 
 `details.seriesId` を使い、フロントは既存作品詳細（`/api/series/{series_id}`）への誘導を実装できる。
 
+#### **8.1.4 DELETE /api/volumes/{isbn}（指定巻削除）**
+
+作品詳細画面の「登録済み巻」から、1冊だけ削除するエンドポイント。
+
+**HTTPメソッド/パス**
+
+* `DELETE /api/volumes/{isbn}`
+
+**パスパラメータ**
+
+| パラメータ | 型 | 必須 | 説明 |
+|---|---|---|---|
+| `isbn` | string | 必須 | 削除対象のISBN。ハイフン付き・全角数字・前後空白を許容し、サーバー側で正規化する |
+
+`isbn` の正規化ルールは `POST /api/volumes` と同一で、`docs/DEVELOPMENT_RULES.md` の「識別子（ISBN）正規化ルール」に従う。
+
+**レスポンス（200 OK）**
+
+このエンドポイントは **Volumeのみ削除** し、Seriesレコードは削除しない。  
+（Seriesごと削除したい場合は `DELETE /api/series/{series_id}/volumes` を使う）
+
+| フィールド | 型 | `null` | 説明 |
+|---|---|---|---|
+| `deleted` | object | 不可 | 削除結果 |
+| `deleted.isbn` | string | 不可 | 削除したVolumeの正規化済みISBN |
+| `deleted.seriesId` | number | 不可 | 削除対象Volumeが属していたSeries ID |
+| `deleted.remainingVolumeCount` | number | 不可 | 同Seriesに残っているVolume件数 |
+
+**レスポンス例（200 OK）**
+
+```json
+{
+  "deleted": {
+    "isbn": "9784088836440",
+    "seriesId": 12,
+    "remainingVolumeCount": 3
+  }
+}
+```
+
+**対象なしレスポンス（404 Not Found）**
+
+```json
+{
+  "error": {
+    "code": "VOLUME_NOT_FOUND",
+    "message": "Volume not found",
+    "details": {
+      "isbn": "9784088836440"
+    }
+  }
+}
+```
+
+**エラー**
+
+* `isbn` 正規化後が13桁でない場合は `400`（`INVALID_ISBN`）を返す
+* 4xx/5xx の形式は `docs/DEVELOPMENT_RULES.md` の「APIエラーレスポンス規約」に従う
+
+#### **8.1.5 DELETE /api/series/{series_id}/volumes（全巻削除）**
+
+作品詳細画面の「全巻削除」操作で、対象Seriesと配下Volumeを物理削除するエンドポイント。
+
+**HTTPメソッド/パス**
+
+* `DELETE /api/series/{series_id}/volumes`
+
+**パスパラメータ**
+
+| パラメータ | 型 | 必須 | 説明 |
+|---|---|---|---|
+| `series_id` | number | 必須 | 削除対象のSeries ID |
+
+**レスポンス（200 OK）**
+
+| フィールド | 型 | `null` | 説明 |
+|---|---|---|---|
+| `deleted` | object | 不可 | 削除結果 |
+| `deleted.seriesId` | number | 不可 | 削除したSeries ID |
+| `deleted.deletedVolumeCount` | number | 不可 | 削除したVolume件数（0件の場合あり） |
+
+**レスポンス例（200 OK）**
+
+```json
+{
+  "deleted": {
+    "seriesId": 12,
+    "deletedVolumeCount": 8
+  }
+}
+```
+
+**対象なしレスポンス（404 Not Found）**
+
+```json
+{
+  "error": {
+    "code": "SERIES_NOT_FOUND",
+    "message": "Series not found",
+    "details": {
+      "seriesId": 12
+    }
+  }
+}
+```
+
+**エラー**
+
+* 4xx/5xx の形式は `docs/DEVELOPMENT_RULES.md` の「APIエラーレスポンス規約」に従う
+
 ### **8.2 外部検索（NDL Search）**
 
 * `GET /api/catalog/search?q=...&limit=...`（検索タブ用：候補＋所持判定）  
