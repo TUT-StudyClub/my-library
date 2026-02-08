@@ -113,9 +113,7 @@ class NdlClient:
 
     def lookup_by_identifier(self, isbn: str) -> Optional[CatalogSearchCandidate]:
         """識別子（ISBN）でNDL Searchを検索し、最良候補1件を返す."""
-        normalized_isbn = _extract_isbn13(isbn)
-        if normalized_isbn is None:
-            raise ValueError("isbn must contain ISBN-13")
+        normalized_isbn = _normalize_identifier(isbn)
 
         xml_text = self._fetch_xml(
             params={
@@ -260,6 +258,17 @@ def _normalize_optional_text(value: Optional[str]) -> Optional[str]:
         return None
 
     return normalized_value
+
+
+def _normalize_identifier(raw_identifier: str) -> str:
+    """DB保存ルール相当で識別子を正規化する."""
+    normalized_identifier = unicodedata.normalize("NFKC", raw_identifier).strip()
+    normalized_identifier = normalized_identifier.replace("-", "")
+
+    if re.fullmatch(r"[0-9]{13}", normalized_identifier) is None:
+        raise ValueError("isbn must be 13 digits")
+
+    return normalized_identifier
 
 
 def _extract_first_non_empty_text(
