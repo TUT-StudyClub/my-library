@@ -9,7 +9,7 @@ from typing import Annotated, Any, Optional
 
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,7 +20,13 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from src.config import load_settings
 from src.db import check_database_connection, get_db_connection, initialize_database
 from src.library_queries import fetch_library_series, fetch_series_detail
-from src.ndl_client import CatalogVolumeMetadata, NdlClientError, fetch_catalog_volume_metadata
+from src.ndl_client import (
+    CatalogSearchCandidate,
+    CatalogVolumeMetadata,
+    NdlClientError,
+    fetch_catalog_volume_metadata,
+    search_by_keyword,
+)
 
 load_dotenv()
 settings = load_settings()
@@ -170,6 +176,17 @@ class CreateVolumeResponse(BaseModel):
     volume: VolumeResponse
 
 
+class CatalogSearchCandidateResponse(BaseModel):
+    """カタログ検索候補レスポンス."""
+
+    title: str
+    author: Optional[str]
+    publisher: Optional[str]
+    isbn: Optional[str]
+    volume_number: Optional[int]
+    cover_url: Optional[str]
+
+
 def _normalize_isbn(raw_isbn: str) -> str:
     """ISBN を保存用形式（半角数字13桁）へ正規化する."""
     normalized_isbn = unicodedata.normalize("NFKC", raw_isbn).strip()
@@ -192,6 +209,26 @@ def _fetch_catalog_volume_metadata(isbn: str) -> CatalogVolumeMetadata:
     """ISBNでNDL Searchを検索し、登録に必要な巻メタデータを返す."""
     try:
         return fetch_catalog_volume_metadata(isbn)
+    except NdlClientError as error:
+        raise HTTPException(
+            status_code=error.status_code,
+            detail=error.to_http_exception_detail(),
+        ) from error
+
+
+def _search_catalog_by_keyword(q: str, limit: int) -> list[CatalogSearchCandidate]:
+    """キーワードでNDL Searchを検索し、候補一覧を返す."""
+    try:
+        return search_by_keyword(q=q, limit=limit, page=1)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "INVALID_CATALOG_SEARCH_QUERY",
+                "message": "Catalog search query is invalid",
+                "details": {"reason": str(error)},
+            },
+        ) from error
     except NdlClientError as error:
         raise HTTPException(
             status_code=error.status_code,
@@ -647,6 +684,28 @@ async def list_library(
             representative_cover_url=series.representative_cover_url,
         )
         for series in series_list
+    ]
+
+
+@app.get("/api/catalog/search", response_model=list[CatalogSearchCandidateResponse])
+async def search_catalog(
+    q: str,
+    limit: Annotated[int, Query(ge=1, le=100)] = 10,
+):
+    """外部カタログをキーワード検索し、候補一覧を返す."""
+    candidates: list[CatalogSearchCandidate] = await run_in_threadpool(
+        _search_catalog_by_keyword, q, limit
+    )
+    return [
+        CatalogSearchCandidateResponse(
+            title=candidate.title,
+            author=candidate.author,
+            publisher=candidate.publisher,
+            isbn=candidate.isbn,
+            volume_number=candidate.volume_number,
+            cover_url=candidate.cover_url,
+        )
+        for candidate in candidates
     ]
 
 
