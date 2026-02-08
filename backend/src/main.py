@@ -21,7 +21,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src.config import load_settings
 from src.db import check_database_connection, get_db_connection, initialize_database
-from src.library_queries import fetch_library_series
+from src.library_queries import fetch_library_series, fetch_series_detail
 
 load_dotenv()
 settings = load_settings()
@@ -156,6 +156,12 @@ class VolumeResponse(BaseModel):
     volume_number: Optional[int]
     cover_url: Optional[str]
     registered_at: str
+
+
+class SeriesDetailResponse(SeriesResponse):
+    """Series 詳細レスポンス."""
+
+    volumes: list[VolumeResponse]
 
 
 class CreateVolumeResponse(BaseModel):
@@ -731,22 +737,14 @@ async def list_library(
     ]
 
 
-@app.get("/api/series/{series_id}", response_model=SeriesResponse)
+@app.get("/api/series/{series_id}", response_model=SeriesDetailResponse)
 async def get_series(
     series_id: int,
     connection: Annotated[sqlite3.Connection, Depends(get_db_connection)],
 ):
-    """Series を ID 指定で1件取得する."""
-    row = connection.execute(
-        """
-        SELECT id, title, author, publisher
-        FROM series
-        WHERE id = ?;
-        """,
-        (series_id,),
-    ).fetchone()
-
-    if row is None:
+    """Series を ID 指定で1件取得し、登録済み巻を返す."""
+    series_detail = fetch_series_detail(connection=connection, series_id=series_id)
+    if series_detail is None:
         raise HTTPException(
             status_code=404,
             detail={
@@ -756,7 +754,21 @@ async def get_series(
             },
         )
 
-    return SeriesResponse(id=row[0], title=row[1], author=row[2], publisher=row[3])
+    return SeriesDetailResponse(
+        id=series_detail.id,
+        title=series_detail.title,
+        author=series_detail.author,
+        publisher=series_detail.publisher,
+        volumes=[
+            VolumeResponse(
+                isbn=volume.isbn,
+                volume_number=volume.volume_number,
+                cover_url=volume.cover_url,
+                registered_at=_to_iso8601_utc(volume.registered_at),
+            )
+            for volume in series_detail.volumes
+        ],
+    )
 
 
 def run() -> None:
