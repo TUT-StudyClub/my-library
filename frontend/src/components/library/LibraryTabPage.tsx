@@ -39,6 +39,7 @@ export function LibraryTabPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [searchKeyword, setSearchKeyword] = useState("");
 
   useEffect(() => {
     let isCancelled = false;
@@ -99,20 +100,27 @@ export function LibraryTabPage() {
           </button>
         </header>
 
+        <section className={`${styles.section} ${styles.searchSection}`}>
+          <label className={styles.searchLabel} htmlFor="librarySearchInput">
+            所持内検索
+          </label>
+          <input
+            aria-label="所持内検索"
+            className={styles.searchInput}
+            id="librarySearchInput"
+            onChange={(event) => {
+              setSearchKeyword(event.target.value);
+            }}
+            placeholder="タイトル・著者で検索"
+            type="text"
+            value={searchKeyword}
+          />
+        </section>
+
         <nav aria-label="メインタブ" className={styles.tabs}>
           <span className={`${styles.tab} ${styles.tabActive}`}>ライブラリ</span>
           <span className={`${styles.tab} ${styles.tabInactive}`}>検索</span>
         </nav>
-
-        <section className={styles.section}>
-          <h2 className={styles.sectionTitle}>所持内検索</h2>
-          <input
-            aria-label="所持内検索"
-            className={styles.searchInput}
-            placeholder="タイトル・著者で検索（未実装）"
-            type="text"
-          />
-        </section>
 
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>シリーズ一覧</h2>
