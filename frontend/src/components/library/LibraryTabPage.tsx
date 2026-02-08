@@ -171,6 +171,7 @@ export function LibraryTabPage() {
               <div className={styles.seriesGrid}>
                 {seriesList.map((series) => (
                   <LibrarySeriesCard
+                    detailPageUrl={`/library/${series.id}`}
                     key={series.id}
                     representativeCoverUrl={series.representative_cover_url}
                     title={series.title}
