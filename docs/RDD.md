@@ -253,7 +253,7 @@
 
 ## **8. API要件（概要）**
 
-### **所持（DB）**
+### **8.1 所持（DB）**
 
 * `GET /api/library`（Series一覧。代表表紙URLを含む）  
 * `GET /api/library?q=...`（title OR author）  
@@ -262,7 +262,91 @@
 * `DELETE /api/volumes/{isbn}`（指定巻削除）  
 * `DELETE /api/series/{series_id}/volumes`（全巻削除＝物理削除）
 
-### **外部検索（NDL Search）**
+#### **8.1.1 GET /api/library（ライブラリ一覧）**
+
+フロントのライブラリ画面（所持Series一覧）で使用するエンドポイント。
+
+**HTTPメソッド/パス**
+
+* `GET /api/library`
+
+**クエリパラメータ**
+
+| パラメータ | 型 | 必須 | 説明 |
+|---|---|---|---|
+| `q` | string | 任意 | `title OR author` の部分一致検索キーワード |
+
+`q` の扱いは以下で固定する。
+
+* `q` 未指定、`q=`、空白のみ（例: `"   "`）は「検索なし」とみなし、全件を返す  
+* 前後空白はトリムしてから検索する  
+* 検索条件は `title LIKE %q% OR author LIKE %q%`（部分一致）  
+* `author` が `null` のSeriesは、検索時に空文字として扱う（エラーにしない）
+
+**レスポンス（200 OK）**
+
+配列で返す。1要素が1Series。
+
+| フィールド | 型 | `null` | 説明 |
+|---|---|---|---|
+| `id` | number | 不可 | Series ID |
+| `title` | string | 不可 | 作品タイトル |
+| `author` | string | 可 | 著者名 |
+| `publisher` | string | 可 | 出版社名 |
+| `representative_cover_url` | string | 可 | ライブラリカードで使う代表表紙URL |
+
+並び順は以下で固定する。
+
+* `created_at DESC`, `id DESC`（新しく作成されたSeriesが先頭）
+
+`representative_cover_url` は以下優先順位で決定する。
+
+1. `volume_number = 1` の巻で、`cover_url` が空でないもの  
+2. 1が無い場合、同一Series内で `registered_at` が最古の巻の `cover_url`  
+3. `cover_url` が1件も無い場合は `null`
+
+**レスポンス例（検索なし）**
+
+```json
+[
+  {
+    "id": 12,
+    "title": "葬送のフリーレン",
+    "author": "山田鐘人",
+    "publisher": "小学館",
+    "representative_cover_url": "https://example.com/covers/frieren-1.jpg"
+  },
+  {
+    "id": 11,
+    "title": "作品B",
+    "author": null,
+    "publisher": "テスト出版社",
+    "representative_cover_url": null
+  }
+]
+```
+
+**レスポンス例（`q` 指定あり）**
+
+`GET /api/library?q=山田`
+
+```json
+[
+  {
+    "id": 12,
+    "title": "葬送のフリーレン",
+    "author": "山田鐘人",
+    "publisher": "小学館",
+    "representative_cover_url": "https://example.com/covers/frieren-1.jpg"
+  }
+]
+```
+
+**エラー**
+
+* 4xx/5xx の形式は `docs/DEVELOPMENT_RULES.md` の「APIエラーレスポンス規約」に従う
+
+### **8.2 外部検索（NDL Search）**
 
 * `GET /api/catalog/search?q=...&limit=...`（検索タブ用：候補＋所持判定）  
 * `GET /api/series/{series_id}/candidates`（作品詳細用：未登録候補。フィルタ＋重複排除済み）
