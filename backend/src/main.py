@@ -13,6 +13,7 @@ import httpx
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -656,7 +657,9 @@ async def create_volume(
     if existing_series_id is not None:
         _raise_volume_already_exists(normalized_isbn, existing_series_id)
 
-    metadata = _fetch_catalog_volume_metadata(normalized_isbn)
+    metadata: CatalogVolumeMetadata = await run_in_threadpool(
+        _fetch_catalog_volume_metadata, normalized_isbn
+    )
     series = _find_or_create_series(
         connection=connection,
         title=metadata.title,
