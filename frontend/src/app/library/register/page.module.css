@@ -339,6 +339,57 @@
   margin: 12px 0 0;
 }
 
+.nextActionPanel {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  margin-top: 14px;
+  padding: 12px;
+}
+
+.nextActionLabel {
+  color: #475569;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.nextActionRow {
+  display: flex;
+  gap: 10px;
+}
+
+.nextActionPrimaryButton,
+.nextActionSecondaryButton {
+  align-items: center;
+  appearance: none;
+  border: none;
+  border-radius: 9999px;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.9rem;
+  font-weight: 600;
+  justify-content: center;
+  line-height: 1;
+  padding: 10px 16px;
+  text-decoration: none;
+}
+
+.nextActionPrimaryButton {
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+.nextActionSecondaryButton {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
+.nextActionPrimaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 @media (max-width: 640px) {
   .cameraPreview {
     max-height: 280px;
@@ -349,6 +400,10 @@
   }
 
   .manualInputRow {
+    flex-direction: column;
+  }
+
+  .nextActionRow {
     flex-direction: column;
   }
 }
