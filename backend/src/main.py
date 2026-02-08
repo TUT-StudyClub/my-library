@@ -28,8 +28,10 @@ DEFAULT_ERROR_CODE_BY_STATUS = {
     status.HTTP_409_CONFLICT: "CONFLICT",
     422: "VALIDATION_ERROR",
     status.HTTP_429_TOO_MANY_REQUESTS: "TOO_MANY_REQUESTS",
+    status.HTTP_502_BAD_GATEWAY: "BAD_GATEWAY",
     status.HTTP_500_INTERNAL_SERVER_ERROR: "INTERNAL_SERVER_ERROR",
     status.HTTP_503_SERVICE_UNAVAILABLE: "SERVICE_UNAVAILABLE",
+    status.HTTP_504_GATEWAY_TIMEOUT: "GATEWAY_TIMEOUT",
 }
 
 
@@ -270,7 +272,14 @@ async def get_series(
     ).fetchone()
 
     if row is None:
-        raise HTTPException(status_code=404, detail="Series not found")
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "SERIES_NOT_FOUND",
+                "message": "Series not found",
+                "details": {"seriesId": series_id},
+            },
+        )
 
     return SeriesResponse(id=row[0], title=row[1], author=row[2], publisher=row[3])
 
