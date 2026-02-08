@@ -11,11 +11,17 @@ const UNSUPPORTED_CAMERA_MESSAGE = "このブラウザではカメラ機能を�
 const SCANNER_ERROR_MESSAGE = "読み取り処理でエラーが発生しました。";
 const ISBN_EXTRACTION_ERROR_MESSAGE =
   "読み取り文字列からISBNを抽出できませんでした。別の角度で再読み取りしてください。";
+const INVALID_ISBN_MESSAGE = "ISBNは正規化後に13桁の数字である必要があります。";
+const DEFAULT_REGISTER_ERROR_MESSAGE = "登録に失敗しました。";
+const REGISTER_REQUEST_ERROR_MESSAGE = "登録リクエストの送信に失敗しました。";
 const IGNORABLE_SCAN_ERROR_NAMES = new Set([
   "NotFoundException",
   "ChecksumException",
   "FormatException",
 ]);
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+
+type RegisterRequestStatus = "idle" | "success" | "failure";
 
 function normalizeScannedText(rawText: string): string {
   return rawText.normalize("NFKC").trim();
@@ -24,11 +30,34 @@ function normalizeScannedText(rawText: string): string {
 function toNormalizedIsbn(rawText: string): string | null {
   const normalizedText = normalizeScannedText(rawText);
   const compactText = normalizedText.replaceAll("-", "").replace(/\s+/g, "");
-  if (/^[0-9]{13}$/.test(compactText)) {
+  if (isNormalizedIsbn(compactText)) {
     return compactText;
   }
 
   return null;
+}
+
+function isNormalizedIsbn(value: string): boolean {
+  return /^[0-9]{13}$/.test(value);
+}
+
+function extractRegisterErrorMessage(errorPayload: unknown, statusCode: number): string {
+  if (
+    typeof errorPayload === "object" &&
+    errorPayload !== null &&
+    "error" in errorPayload &&
+    typeof errorPayload.error === "object" &&
+    errorPayload.error !== null &&
+    "message" in errorPayload.error &&
+    typeof errorPayload.error.message === "string"
+  ) {
+    const message = errorPayload.error.message.trim();
+    if (message !== "") {
+      return message;
+    }
+  }
+
+  return `${DEFAULT_REGISTER_ERROR_MESSAGE} (status: ${statusCode})`;
 }
 
 function extractNormalizedIsbn(scanText: string): string | null {
@@ -61,6 +90,9 @@ export default function RegisterPage() {
   const [confirmedIsbn, setConfirmedIsbn] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isbnErrorMessage, setIsbnErrorMessage] = useState<string | null>(null);
+  const [isSubmittingRegister, setIsSubmittingRegister] = useState(false);
+  const [registerRequestStatus, setRegisterRequestStatus] = useState<RegisterRequestStatus>("idle");
+  const [registerRequestMessage, setRegisterRequestMessage] = useState<string | null>(null);
   const registerRequestPayload =
     confirmedIsbn === null
       ? null
@@ -153,6 +185,49 @@ export default function RegisterPage() {
     }
   }, [isCameraActive, isStartingCamera, stopCamera]);
 
+  const submitRegisterRequest = useCallback(async () => {
+    if (isSubmittingRegister) {
+      return;
+    }
+
+    if (confirmedIsbn === null || !isNormalizedIsbn(confirmedIsbn)) {
+      setRegisterRequestStatus("failure");
+      setRegisterRequestMessage(INVALID_ISBN_MESSAGE);
+      return;
+    }
+
+    setRegisterRequestStatus("idle");
+    setRegisterRequestMessage(null);
+    setIsSubmittingRegister(true);
+
+    try {
+      const response = await fetch(new URL("/api/volumes", API_BASE_URL).toString(), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          isbn: confirmedIsbn,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorPayload = (await response.json().catch(() => null)) as unknown;
+        setRegisterRequestStatus("failure");
+        setRegisterRequestMessage(extractRegisterErrorMessage(errorPayload, response.status));
+        return;
+      }
+
+      setRegisterRequestStatus("success");
+      setRegisterRequestMessage("登録リクエストを送信しました。");
+    } catch {
+      setRegisterRequestStatus("failure");
+      setRegisterRequestMessage(REGISTER_REQUEST_ERROR_MESSAGE);
+    } finally {
+      setIsSubmittingRegister(false);
+    }
+  }, [confirmedIsbn, isSubmittingRegister]);
+
   return (
     <main className={styles.page}>
       <div className={styles.container}>
@@ -241,6 +316,31 @@ export default function RegisterPage() {
               {registerRequestPayload ?? "ISBNを確定すると登録リクエストを生成できます。"}
             </pre>
           </div>
+
+          <div className={styles.submitRow}>
+            <button
+              className={styles.submitButton}
+              disabled={isSubmittingRegister}
+              onClick={() => {
+                void submitRegisterRequest();
+              }}
+              type="button"
+            >
+              {isSubmittingRegister ? "登録中..." : "登録する"}
+            </button>
+          </div>
+
+          {registerRequestMessage !== null && (
+            <p
+              aria-live="polite"
+              className={
+                registerRequestStatus === "success" ? styles.successText : styles.errorText
+              }
+              role="status"
+            >
+              {registerRequestMessage}
+            </p>
+          )}
         </section>
       </div>
     </main>
