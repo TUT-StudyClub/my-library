@@ -386,7 +386,7 @@ def test_ndl_client_lookup_by_identifier_returns_exact_isbn_candidate(monkeypatc
     request_policy = ndl_client.NdlRequestPolicy(timeout_seconds=6.0, max_retries=0)
     client = ndl_client.NdlClient(base_url="https://example.com/ndl", request_policy=request_policy)
 
-    candidate = client.lookup_by_identifier("ISBN978-4-000-00000-2")
+    candidate = client.lookup_by_identifier(" ９７８-４-０００-０００００-２ ")
 
     assert called == {
         "url": "https://example.com/ndl",
@@ -453,12 +453,41 @@ def test_ndl_client_lookup_by_identifier_returns_none_when_no_candidate(monkeypa
     assert candidate is None
 
 
+@pytest.mark.parametrize(
+    "raw_isbn",
+    [
+        "9784000000999",
+        " 978-4-000-00099-9 ",
+        "９７８-４-０００-０００９９-９",
+    ],
+)
+def test_ndl_client_lookup_by_identifier_normalizes_identifier_like_db(monkeypatch, raw_isbn: str):
+    """入力形式が異なってもDB保存形式と同じISBNで検索する."""
+    called = {}
+    xml_text = "<rss><channel></channel></rss>"
+
+    def fake_get(url: str, params: dict[str, Any], timeout: float):
+        called.update({"url": url, "params": params, "timeout": timeout})
+        return SimpleNamespace(status_code=200, text=xml_text)
+
+    monkeypatch.setattr(ndl_client.httpx, "get", fake_get)
+    client = ndl_client.NdlClient(base_url="https://example.com/ndl")
+
+    candidate = client.lookup_by_identifier(raw_isbn)
+
+    assert candidate is None
+    assert called["params"]["isbn"] == "9784000000999"
+
+
 def test_ndl_client_lookup_by_identifier_validates_parameter():
     """ISBN-13を含まない入力は ValueError にする."""
     client = ndl_client.NdlClient(base_url="https://example.com/ndl")
 
     with pytest.raises(ValueError):
         client.lookup_by_identifier("識別子なし")
+
+    with pytest.raises(ValueError):
+        client.lookup_by_identifier("ISBN978-4-000-00000-2")
 
 
 def test_lookup_by_identifier_uses_runtime_settings(monkeypatch):
