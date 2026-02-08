@@ -40,6 +40,24 @@ def test_create_series_and_get_series_persists_data(monkeypatch, tmp_path):
     assert row == ("テスト作品", "テスト著者", "テスト出版社")
 
 
+def test_get_series_returns_not_found_error_when_series_does_not_exist(monkeypatch, tmp_path):
+    """存在しない Series ID 指定時に 404 の統一エラーを返す."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    with TestClient(main.app) as client:
+        response = client.get("/api/series/999999")
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "error": {
+            "code": "SERIES_NOT_FOUND",
+            "message": "Series not found",
+            "details": {"seriesId": 999999},
+        }
+    }
+
+
 def test_create_series_rejects_blank_title(monkeypatch, tmp_path):
     """Series 登録APIは空タイトルを拒否する."""
     db_path = tmp_path / "library.db"
