@@ -213,7 +213,7 @@ export default function RegisterPage() {
   } else if (registerRequestStatus === "success") {
     progressStatusLabel = "登録完了";
     nextActionLabel =
-      "続けて登録する場合は次のバーコードを読み取って「登録する」を押してください。";
+      "下の「次の行動」から、続けてスキャンするかライブラリへ戻るかを選択してください。";
     progressTone = "success";
   } else if (registerRequestStatus === "alreadyExists") {
     progressStatusLabel = "登録済みISBN";
@@ -453,6 +453,23 @@ export default function RegisterPage() {
     }
   }, [confirmedIsbn, isManualInputOpen, manualIsbnInput]);
 
+  const continueScanning = useCallback(() => {
+    setRegisterRequestStatus("idle");
+    setRegisterRequestMessage(null);
+    setErrorMessage(null);
+    setIsbnErrorMessage(null);
+    setScanResult(null);
+    setConfirmedIsbn(null);
+    setManualInputErrorMessage(null);
+    setIsManualInputOpen(false);
+    setManualIsbnInput("");
+    latestScanTextRef.current = null;
+
+    if (!isCameraActive && !isStartingCamera) {
+      void startCamera();
+    }
+  }, [isCameraActive, isStartingCamera, startCamera]);
+
   return (
     <main className={styles.page}>
       <div className={styles.container}>
@@ -630,6 +647,25 @@ export default function RegisterPage() {
             >
               {registerRequestMessage}
             </p>
+          )}
+
+          {registerRequestMessage !== null && (
+            <section className={styles.nextActionPanel}>
+              <p className={styles.nextActionLabel}>次の行動</p>
+              <div className={styles.nextActionRow}>
+                <button
+                  className={styles.nextActionPrimaryButton}
+                  disabled={isSubmittingRegister}
+                  onClick={continueScanning}
+                  type="button"
+                >
+                  続けてスキャン
+                </button>
+                <Link className={styles.nextActionSecondaryButton} href="/library">
+                  ライブラリに戻る
+                </Link>
+              </div>
+            </section>
           )}
         </section>
       </div>
