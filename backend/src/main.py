@@ -712,6 +712,60 @@ async def create_volume(
     )
 
 
+@app.delete("/api/volumes/{isbn}")
+async def delete_volume(
+    isbn: str,
+    connection: Annotated[sqlite3.Connection, Depends(get_db_connection)],
+):
+    """ISBN指定でVolumeを1件削除する."""
+    normalized_isbn = _normalize_isbn(isbn)
+
+    row = connection.execute(
+        """
+        SELECT series_id
+        FROM volume
+        WHERE isbn = ?;
+        """,
+        (normalized_isbn,),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "VOLUME_NOT_FOUND",
+                "message": "Volume not found",
+                "details": {"isbn": normalized_isbn},
+            },
+        )
+
+    series_id = int(row[0])
+    connection.execute(
+        """
+        DELETE FROM volume
+        WHERE isbn = ?;
+        """,
+        (normalized_isbn,),
+    )
+
+    remaining_count_row = connection.execute(
+        """
+        SELECT COUNT(*)
+        FROM volume
+        WHERE series_id = ?;
+        """,
+        (series_id,),
+    ).fetchone()
+    remaining_volume_count = int(remaining_count_row[0]) if remaining_count_row is not None else 0
+
+    return {
+        "deleted": {
+            "isbn": normalized_isbn,
+            "seriesId": series_id,
+            "remainingVolumeCount": remaining_volume_count,
+        }
+    }
+
+
 @app.get("/api/series", response_model=list[SeriesResponse])
 async def list_series(connection: Annotated[sqlite3.Connection, Depends(get_db_connection)]):
     """登録済み Series 一覧を返す（最小読み取り例）."""
