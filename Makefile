@@ -1,9 +1,51 @@
-.PHONY: check backend-setup backend-run db-smoke lint format format-check typecheck test
+.PHONY: check check-all check-frontend check-backend backend-setup backend-run db-smoke lint format format-check typecheck test
 
 FRONTEND_DIR := frontend
 BACKEND_DIR := backend
 
-check: lint format-check typecheck test
+check:
+	@echo "== Detect changed files =="
+	@changedFiles="$$( (git diff --name-only HEAD; git ls-files --others --exclude-standard) | sort -u )"; \
+	if [ -z "$$changedFiles" ]; then \
+		echo "変更ファイルがないため、フルチェックを実行します。"; \
+		$(MAKE) check-all; \
+		exit $$?; \
+	fi; \
+	frontendChanged=0; \
+	backendChanged=0; \
+	sharedChanged=0; \
+	if printf '%s\n' "$$changedFiles" | grep -Eq '^frontend/'; then frontendChanged=1; fi; \
+	if printf '%s\n' "$$changedFiles" | grep -Eq '^backend/'; then backendChanged=1; fi; \
+	if printf '%s\n' "$$changedFiles" | grep -Eq '^(Makefile|\.github/workflows/ci\.yml)$$'; then sharedChanged=1; fi; \
+	if [ "$$sharedChanged" -eq 1 ]; then \
+		frontendChanged=1; \
+		backendChanged=1; \
+	fi; \
+	if [ "$$frontendChanged" -eq 0 ] && [ "$$backendChanged" -eq 0 ]; then \
+		echo "docs/README などの変更のみのため、check をスキップします。"; \
+		exit 0; \
+	fi; \
+	if [ "$$frontendChanged" -eq 1 ]; then \
+		$(MAKE) check-frontend || exit $$?; \
+	fi; \
+	if [ "$$backendChanged" -eq 1 ]; then \
+		$(MAKE) check-backend || exit $$?; \
+	fi
+
+check-all: lint format-check typecheck test
+
+check-frontend:
+	@echo "== Frontend check =="
+	cd $(FRONTEND_DIR) && npm run lint
+	cd $(FRONTEND_DIR) && npm run format:check
+	cd $(FRONTEND_DIR) && npm run typecheck
+
+check-backend: backend-setup
+	@echo "== Backend check =="
+	cd $(BACKEND_DIR) && uv run ruff check .
+	cd $(BACKEND_DIR) && uv run black --check .
+	cd $(BACKEND_DIR) && uv run mypy src
+	cd $(BACKEND_DIR) && uv run pytest -q
 
 backend-setup:
 	@echo "== Backend setup =="
