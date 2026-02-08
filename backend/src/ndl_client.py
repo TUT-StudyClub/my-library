@@ -13,7 +13,18 @@ NDL_XML_NAMESPACES = {
     "dc": "http://purl.org/dc/elements/1.1/",
     "dcndl": "http://ndl.go.jp/dcndl/terms/",
 }
-DEFAULT_REQUEST_TIMEOUT_SECONDS = 10.0
+
+
+@dataclass(frozen=True)
+class NdlRequestPolicy:
+    """NDL API 呼び出し時のタイムアウト・リトライ方針."""
+
+    timeout_seconds: float = 10.0
+    max_retries: int = 1
+    retryable_status_codes: tuple[int, ...] = (429, 500, 502, 503, 504)
+
+
+DEFAULT_REQUEST_POLICY = NdlRequestPolicy()
 
 
 @dataclass(frozen=True)
@@ -30,41 +41,60 @@ class CatalogVolumeMetadata:
 class NdlClient:
     """NDL Search API クライアント."""
 
-    def __init__(self, base_url: str, timeout_seconds: float = DEFAULT_REQUEST_TIMEOUT_SECONDS):
+    def __init__(self, base_url: str, request_policy: NdlRequestPolicy = DEFAULT_REQUEST_POLICY):
         self._base_url = base_url
-        self._timeout_seconds = timeout_seconds
+        self._request_policy = request_policy
 
     def fetch_catalog_volume_metadata(self, isbn: str) -> CatalogVolumeMetadata:
         """ISBNでNDL Searchを検索し、登録に必要な巻メタデータを返す."""
-        try:
-            response = httpx.get(
-                self._base_url,
-                params={"isbn": isbn, "cnt": 1},
-                timeout=self._timeout_seconds,
-            )
-        except httpx.TimeoutException as error:
-            raise HTTPException(
-                status_code=504,
-                detail={
-                    "code": "NDL_API_TIMEOUT",
-                    "message": "NDL API request timed out",
-                    "details": {
-                        "upstream": "NDL Search",
-                        "timeoutSeconds": _format_timeout_seconds(self._timeout_seconds),
-                    },
-                },
-            ) from error
-        except httpx.HTTPError as error:
-            raise HTTPException(
-                status_code=502,
-                detail={
-                    "code": "NDL_API_BAD_GATEWAY",
-                    "message": "Failed to connect NDL API",
-                    "details": {"upstream": "NDL Search"},
-                },
-            ) from error
+        for attempt_index in range(self._request_policy.max_retries + 1):
+            try:
+                response = httpx.get(
+                    self._base_url,
+                    params={"isbn": isbn, "cnt": 1},
+                    timeout=self._request_policy.timeout_seconds,
+                )
+            except httpx.TimeoutException as error:
+                if _has_retry_budget(self._request_policy.max_retries, attempt_index):
+                    continue
 
-        if response.status_code != 200:
+                raise HTTPException(
+                    status_code=504,
+                    detail={
+                        "code": "NDL_API_TIMEOUT",
+                        "message": "NDL API request timed out",
+                        "details": {
+                            "upstream": "NDL Search",
+                            "timeoutSeconds": _format_timeout_seconds(
+                                self._request_policy.timeout_seconds
+                            ),
+                        },
+                    },
+                ) from error
+            except httpx.HTTPError as error:
+                if _is_retryable_http_error(error) and _has_retry_budget(
+                    self._request_policy.max_retries, attempt_index
+                ):
+                    continue
+
+                raise HTTPException(
+                    status_code=502,
+                    detail={
+                        "code": "NDL_API_BAD_GATEWAY",
+                        "message": "Failed to connect NDL API",
+                        "details": {"upstream": "NDL Search"},
+                    },
+                ) from error
+
+            if response.status_code == 200:
+                return _parse_catalog_volume_metadata(response.text, isbn)
+
+            if (
+                response.status_code in self._request_policy.retryable_status_codes
+                and _has_retry_budget(self._request_policy.max_retries, attempt_index)
+            ):
+                continue
+
             raise HTTPException(
                 status_code=502,
                 detail={
@@ -74,7 +104,7 @@ class NdlClient:
                 },
             )
 
-        return _parse_catalog_volume_metadata(response.text, isbn)
+        raise RuntimeError("unreachable")
 
 
 def fetch_catalog_volume_metadata(isbn: str) -> CatalogVolumeMetadata:
@@ -82,6 +112,16 @@ def fetch_catalog_volume_metadata(isbn: str) -> CatalogVolumeMetadata:
     runtime_settings = load_settings()
     ndl_client = NdlClient(base_url=runtime_settings.ndl_api_base_url)
     return ndl_client.fetch_catalog_volume_metadata(isbn)
+
+
+def _has_retry_budget(max_retries: int, attempt_index: int) -> bool:
+    """現在試行で再試行可能か判定する."""
+    return attempt_index < max_retries
+
+
+def _is_retryable_http_error(error: httpx.HTTPError) -> bool:
+    """再試行対象の通信エラーか判定する."""
+    return isinstance(error, httpx.TransportError)
 
 
 def _format_timeout_seconds(timeout_seconds: float) -> Any:
