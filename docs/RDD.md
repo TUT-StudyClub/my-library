@@ -346,7 +346,79 @@
 
 * 4xx/5xx の形式は `docs/DEVELOPMENT_RULES.md` の「APIエラーレスポンス規約」に従う
 
-#### **8.1.2 POST /api/volumes（巻登録）**
+#### **8.1.2 GET /api/series/{series_id}（作品詳細）**
+
+フロントの作品詳細画面（登録済み巻表示）で使用するエンドポイント。
+
+**HTTPメソッド/パス**
+
+* `GET /api/series/{series_id}`
+
+**パスパラメータ**
+
+| パラメータ | 型 | 必須 | 説明 |
+|---|---|---|---|
+| `series_id` | number | 必須 | 取得対象のSeries ID |
+
+**レスポンス（200 OK）**
+
+作品情報と、配下の登録済み巻配列を返す。
+
+| フィールド | 型 | `null` | 説明 |
+|---|---|---|---|
+| `id` | number | 不可 | Series ID |
+| `title` | string | 不可 | 作品タイトル |
+| `author` | string | 可 | 著者名 |
+| `publisher` | string | 可 | 出版社名 |
+| `volumes` | array | 不可 | 登録済み巻一覧（0件の場合は空配列 `[]`） |
+| `volumes[].isbn` | string | 不可 | 正規化済みISBN（半角数字13桁） |
+| `volumes[].volume_number` | number | 可 | 巻数（不明時は `null`） |
+| `volumes[].cover_url` | string | 可 | 表紙URL（未取得時は `null`） |
+| `volumes[].registered_at` | string | 不可 | 登録日時（ISO 8601） |
+
+`volumes` の並び順は以下で固定する。
+
+1. `volume_number` 昇順（`null` は末尾）  
+2. 同巻数内は `registered_at` 昇順  
+3. 同時刻は `isbn` 昇順
+
+**レスポンス例（200 OK）**
+
+```json
+{
+  "id": 12,
+  "title": "葬送のフリーレン",
+  "author": "山田鐘人",
+  "publisher": "小学館",
+  "volumes": [
+    {
+      "isbn": "9784088836440",
+      "volume_number": 1,
+      "cover_url": "https://example.com/covers/frieren-1.jpg",
+      "registered_at": "2026-02-08T03:21:45Z"
+    },
+    {
+      "isbn": "9784088836457",
+      "volume_number": 2,
+      "cover_url": "https://example.com/covers/frieren-2.jpg",
+      "registered_at": "2026-02-09T03:21:45Z"
+    },
+    {
+      "isbn": "9784088836990",
+      "volume_number": null,
+      "cover_url": null,
+      "registered_at": "2026-02-10T03:21:45Z"
+    }
+  ]
+}
+```
+
+**エラー**
+
+* 4xx/5xx の形式は `docs/DEVELOPMENT_RULES.md` の「APIエラーレスポンス規約」に従う
+* `series_id` が存在しない場合は `404`（`SERIES_NOT_FOUND`）を返す
+
+#### **8.1.3 POST /api/volumes（巻登録）**
 
 スキャン/手入力/検索結果から、ISBN指定で所持巻を1件登録するエンドポイント。
 
