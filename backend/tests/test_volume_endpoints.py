@@ -173,3 +173,99 @@ def test_create_volume_rejects_invalid_isbn(monkeypatch, tmp_path):
             "details": {"isbn": "978-abc"},
         }
     }
+
+
+def test_delete_volume_removes_volume_and_is_not_returned_on_get(monkeypatch, tmp_path):
+    """Volume削除後、作品詳細取得で対象ISBNが返らない."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    def fetch_catalog_volume(isbn: str) -> main.CatalogVolumeMetadata:
+        if isbn == "9780000000101":
+            return main.CatalogVolumeMetadata(
+                title="削除確認作品",
+                author="削除確認著者",
+                publisher="削除確認出版社",
+                volume_number=1,
+                cover_url="https://example.com/covers/delete-target.jpg",
+            )
+
+        return main.CatalogVolumeMetadata(
+            title="削除確認作品",
+            author="削除確認著者",
+            publisher="削除確認出版社",
+            volume_number=2,
+            cover_url="https://example.com/covers/remain.jpg",
+        )
+
+    monkeypatch.setattr(main, "_fetch_catalog_volume_metadata", fetch_catalog_volume)
+
+    with TestClient(main.app) as client:
+        created_target = client.post("/api/volumes", json={"isbn": "9780000000101"})
+        created_remain = client.post("/api/volumes", json={"isbn": "9780000000102"})
+        assert created_target.status_code == 201
+        assert created_remain.status_code == 201
+
+        series_id = created_target.json()["series"]["id"]
+        delete_response = client.delete("/api/volumes/９７８-０００００００１０１")
+        get_series_response = client.get(f"/api/series/{series_id}")
+
+    assert delete_response.status_code == 200
+    assert delete_response.json() == {
+        "deleted": {
+            "isbn": "9780000000101",
+            "seriesId": series_id,
+            "remainingVolumeCount": 1,
+        }
+    }
+
+    assert get_series_response.status_code == 200
+    assert [volume["isbn"] for volume in get_series_response.json()["volumes"]] == ["9780000000102"]
+
+    with sqlite3.connect(db_path) as connection:
+        deleted_count = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM volume
+            WHERE isbn = ?;
+            """,
+            ("9780000000101",),
+        ).fetchone()
+
+    assert deleted_count == (0,)
+
+
+def test_delete_volume_returns_not_found_when_isbn_does_not_exist(monkeypatch, tmp_path):
+    """削除対象ISBNが未登録の場合、404の統一エラーを返す."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    with TestClient(main.app) as client:
+        response = client.delete("/api/volumes/9780000000999")
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "error": {
+            "code": "VOLUME_NOT_FOUND",
+            "message": "Volume not found",
+            "details": {"isbn": "9780000000999"},
+        }
+    }
+
+
+def test_delete_volume_rejects_invalid_isbn(monkeypatch, tmp_path):
+    """半角数字13桁にならないISBN指定削除を 400 で拒否する."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    with TestClient(main.app) as client:
+        response = client.delete("/api/volumes/978-abc")
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "error": {
+            "code": "INVALID_ISBN",
+            "message": "isbn must be 13 digits",
+            "details": {"isbn": "978-abc"},
+        }
+    }
