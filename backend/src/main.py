@@ -478,6 +478,34 @@ def _to_iso8601_utc(raw_timestamp: str) -> str:
     return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _build_integrity_error_response(exception: sqlite3.IntegrityError) -> JSONResponse:
+    """SQLite制約違反を統一エラーレスポンスへ変換する."""
+    error_message = str(exception)
+
+    if "UNIQUE constraint failed: volume.isbn" in error_message:
+        return _build_error_response(
+            status_code=409,
+            code="VOLUME_ALREADY_EXISTS",
+            message="Volume already exists",
+            details={},
+        )
+
+    if "FOREIGN KEY constraint failed" in error_message:
+        return _build_error_response(
+            status_code=409,
+            code="DB_CONSTRAINT_VIOLATION",
+            message="Foreign key constraint failed",
+            details={"constraint": "FOREIGN_KEY"},
+        )
+
+    return _build_error_response(
+        status_code=409,
+        code="DB_CONSTRAINT_VIOLATION",
+        message="Database constraint violated",
+        details={"reason": error_message},
+    )
+
+
 def _fetch_series_list(connection: sqlite3.Connection) -> list[SeriesResponse]:
     """DBに登録済みの Series 一覧を取得する."""
     rows = connection.execute("""
@@ -538,6 +566,14 @@ async def handle_validation_exception(
         message="リクエストパラメータが不正です。",
         details=_build_validation_details(exception.errors()),
     )
+
+
+@app.exception_handler(sqlite3.IntegrityError)
+async def handle_integrity_exception(
+    _request: Request, exception: sqlite3.IntegrityError
+) -> JSONResponse:
+    """DB制約違反を統一フォーマットへ変換する."""
+    return _build_integrity_error_response(exception)
 
 
 @app.exception_handler(Exception)
@@ -635,12 +671,12 @@ async def create_volume(
                 metadata.cover_url,
             ),
         )
-    except sqlite3.IntegrityError as error:
+    except sqlite3.IntegrityError:
         existing_series_id = _get_existing_volume_series_id(connection, normalized_isbn)
         if existing_series_id is not None:
             _raise_volume_already_exists(normalized_isbn, existing_series_id)
 
-        raise HTTPException(status_code=500, detail="failed to create volume") from error
+        raise
 
     row = connection.execute(
         """
