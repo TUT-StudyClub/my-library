@@ -33,27 +33,48 @@ def test_list_library_returns_series_with_status_200(monkeypatch, tmp_path):
     assert payload[1]["representative_cover_url"] is None
 
 
-def test_list_library_supports_q_parameter(monkeypatch, tmp_path):
-    """ライブラリ一覧APIが q パラメータで title/author 検索できる."""
+def test_list_library_filters_by_q_and_returns_all_when_q_is_empty(monkeypatch, tmp_path):
+    """ライブラリ一覧APIが q で絞り込み、空文字では全件を返す."""
     db_path = tmp_path / "library.db"
     monkeypatch.setenv("DB_PATH", str(db_path))
 
     with TestClient(main.app) as client:
         client.post(
             "/api/series",
-            json={"title": "作品A", "author": "著者A", "publisher": "出版社A"},
+            json={"title": "作品A-前日譚", "author": "著者A", "publisher": "出版社A"},
         )
         client.post(
             "/api/series",
             json={"title": "作品B", "author": "著者B", "publisher": "出版社B"},
         )
+        client.post(
+            "/api/series",
+            json={"title": "作品C", "author": "著者C", "publisher": "出版社C"},
+        )
 
-        response = client.get("/api/library", params={"q": "著者B"})
+        response_by_title = client.get("/api/library", params={"q": "前日"})
+        response_by_author = client.get("/api/library", params={"q": "著者B"})
+        response_all = client.get("/api/library", params={"q": ""})
+        response_all_with_spaces = client.get("/api/library", params={"q": "   "})
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert len(payload) == 1
-    assert payload[0]["title"] == "作品B"
+    assert response_by_title.status_code == 200
+    assert response_by_author.status_code == 200
+    assert response_all.status_code == 200
+    assert response_all_with_spaces.status_code == 200
+
+    payload_by_title = response_by_title.json()
+    payload_by_author = response_by_author.json()
+    payload_all = response_all.json()
+    payload_all_with_spaces = response_all_with_spaces.json()
+
+    assert len(payload_by_title) == 1
+    assert payload_by_title[0]["title"] == "作品A-前日譚"
+
+    assert len(payload_by_author) == 1
+    assert payload_by_author[0]["title"] == "作品B"
+
+    assert len(payload_all) == 3
+    assert len(payload_all_with_spaces) == 3
 
 
 def test_list_library_selects_representative_cover_by_priority(monkeypatch, tmp_path):
