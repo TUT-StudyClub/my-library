@@ -38,6 +38,18 @@ class CatalogVolumeMetadata:
     cover_url: Optional[str]
 
 
+@dataclass(frozen=True)
+class CatalogSearchCandidate:
+    """NDL Search のキーワード検索候補."""
+
+    title: str
+    author: Optional[str]
+    publisher: Optional[str]
+    isbn: Optional[str]
+    volume_number: Optional[int]
+    cover_url: Optional[str]
+
+
 class NdlClientError(Exception):
     """NDLクライアント失敗時に統一エラー情報を保持する例外."""
 
@@ -72,11 +84,40 @@ class NdlClient:
 
     def fetch_catalog_volume_metadata(self, isbn: str) -> CatalogVolumeMetadata:
         """ISBNでNDL Searchを検索し、登録に必要な巻メタデータを返す."""
+        xml_text = self._fetch_xml(params={"isbn": isbn, "cnt": 1})
+        return _parse_catalog_volume_metadata(xml_text, isbn)
+
+    def search_by_keyword(
+        self, q: str, limit: int = 10, page: int = 1
+    ) -> list[CatalogSearchCandidate]:
+        """キーワードでNDL Searchを検索し、候補一覧を返す."""
+        normalized_query = _normalize_optional_text(q)
+        if normalized_query is None:
+            raise ValueError("q must not be empty")
+
+        if limit < 1:
+            raise ValueError("limit must be greater than 0")
+
+        if page < 1:
+            raise ValueError("page must be greater than 0")
+
+        start_index = (page - 1) * limit + 1
+        xml_text = self._fetch_xml(
+            params={
+                "any": normalized_query,
+                "cnt": limit,
+                "idx": start_index,
+            }
+        )
+        return _parse_catalog_search_candidates(xml_text)
+
+    def _fetch_xml(self, params: dict[str, Any]) -> str:
+        """再試行方針に従って XML レスポンス文字列を取得する."""
         for attempt_index in range(self._request_policy.max_retries + 1):
             try:
                 response = httpx.get(
                     self._base_url,
-                    params={"isbn": isbn, "cnt": 1},
+                    params=params,
                     timeout=self._request_policy.timeout_seconds,
                 )
             except httpx.TimeoutException as error:
@@ -112,7 +153,7 @@ class NdlClient:
                 ) from error
 
             if response.status_code == 200:
-                return _parse_catalog_volume_metadata(response.text, isbn)
+                return response.text
 
             if (
                 response.status_code in self._request_policy.retryable_status_codes
@@ -138,8 +179,15 @@ class NdlClient:
 def fetch_catalog_volume_metadata(isbn: str) -> CatalogVolumeMetadata:
     """設定値を使って NDL Search の巻メタデータを取得する."""
     runtime_settings = load_settings()
-    ndl_client = NdlClient(base_url=runtime_settings.ndl_api_base_url)
-    return ndl_client.fetch_catalog_volume_metadata(isbn)
+    client = NdlClient(base_url=runtime_settings.ndl_api_base_url)
+    return client.fetch_catalog_volume_metadata(isbn)
+
+
+def search_by_keyword(q: str, limit: int = 10, page: int = 1) -> list[CatalogSearchCandidate]:
+    """設定値を使って NDL Search のキーワード候補を取得する."""
+    runtime_settings = load_settings()
+    client = NdlClient(base_url=runtime_settings.ndl_api_base_url)
+    return client.search_by_keyword(q=q, limit=limit, page=page)
 
 
 def _has_retry_budget(max_retries: int, attempt_index: int) -> bool:
@@ -214,6 +262,37 @@ def _extract_cover_url(item: ET.Element) -> Optional[str]:
         return None
 
     return _normalize_optional_text(enclosure.attrib.get("url"))
+
+
+def _extract_isbn13(text_value: Optional[str]) -> Optional[str]:
+    """文字列から ISBN-13（978/979始まり）を抽出する."""
+    if text_value is None:
+        return None
+
+    normalized_text = unicodedata.normalize("NFKC", text_value)
+    compact_text = normalized_text.replace("-", "").replace(" ", "").replace("　", "")
+    matched = re.search(r"(97[89][0-9]{10})", compact_text)
+    if matched is None:
+        return None
+
+    return matched.group(1)
+
+
+def _extract_isbn(item: ET.Element) -> Optional[str]:
+    """RSS item から ISBN-13 を抽出する."""
+    identifier_paths: list[tuple[str, Optional[dict[str, str]]]] = [
+        ("dc:identifier", NDL_XML_NAMESPACES),
+        ("dcndl:identifier", NDL_XML_NAMESPACES),
+        ("guid", None),
+        ("link", None),
+    ]
+    for path, namespaces in identifier_paths:
+        for node in item.findall(path, namespaces or {}):
+            extracted_isbn = _extract_isbn13(node.text)
+            if extracted_isbn is not None:
+                return extracted_isbn
+
+    return None
 
 
 def _extract_volume_number(text_value: Optional[str]) -> Optional[int]:
@@ -327,3 +406,57 @@ def _parse_catalog_volume_metadata(xml_text: str, isbn: str) -> CatalogVolumeMet
         volume_number=volume_number,
         cover_url=_extract_cover_url(item),
     )
+
+
+def _parse_catalog_search_candidates(xml_text: str) -> list[CatalogSearchCandidate]:
+    """NDL Search の OpenSearch XML からキーワード候補一覧を抽出する."""
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as error:
+        raise NdlClientError(
+            status_code=502,
+            code="NDL_API_BAD_GATEWAY",
+            message="NDL API returned invalid XML",
+            details=_build_external_failure_details(
+                failure_type="invalidResponse",
+                retryable=False,
+            ),
+        ) from error
+
+    candidates: list[CatalogSearchCandidate] = []
+    for item in root.findall("./channel/item"):
+        title_text = _extract_first_non_empty_text(item, "dc:title", NDL_XML_NAMESPACES)
+        if title_text is None:
+            title_text = _extract_first_non_empty_text(item, "title")
+
+        if title_text is None:
+            continue
+
+        try:
+            series_title, volume_number_from_title = _split_title_and_volume_number(title_text)
+        except NdlClientError:
+            continue
+
+        volume_number = _extract_volume_number(
+            _extract_first_non_empty_text(item, "dcndl:volume", NDL_XML_NAMESPACES)
+        )
+        if volume_number is None:
+            volume_number = volume_number_from_title
+
+        author = _extract_first_non_empty_text(item, "dc:creator", NDL_XML_NAMESPACES)
+        if author is None:
+            author = _extract_first_non_empty_text(item, "author")
+
+        publisher = _extract_first_non_empty_text(item, "dc:publisher", NDL_XML_NAMESPACES)
+        candidates.append(
+            CatalogSearchCandidate(
+                title=series_title,
+                author=_normalize_optional_text(author),
+                publisher=_normalize_optional_text(publisher),
+                isbn=_extract_isbn(item),
+                volume_number=volume_number,
+                cover_url=_extract_cover_url(item),
+            )
+        )
+
+    return candidates
