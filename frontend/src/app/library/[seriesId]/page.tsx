@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import styles from "./page.module.css";
 
 type SeriesDetailPageProps = {
@@ -9,6 +10,10 @@ type SeriesDetailPageProps = {
 
 export default function SeriesDetailPage({ params }: SeriesDetailPageProps) {
   const normalizedSeriesId = params.seriesId.trim();
+  const isValidSeriesId = /^[1-9][0-9]*$/.test(normalizedSeriesId);
+  if (!isValidSeriesId) {
+    notFound();
+  }
 
   return (
     <main className={styles.page}>
