@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { LibrarySeriesCard } from "./LibrarySeriesCard";
 import styles from "./LibraryTabPage.module.css";
 
 type LibrarySeries = {
@@ -137,14 +138,11 @@ export function LibraryTabPage() {
             {!isLoading && errorMessage === null && seriesList.length > 0 && (
               <div className={styles.seriesGrid}>
                 {seriesList.map((series) => (
-                  <article className={styles.seriesCard} key={series.id}>
-                    <h3 className={styles.seriesTitle}>{series.title}</h3>
-                    <p className={styles.seriesMeta}>
-                      著者: {series.author ?? "未設定"}
-                      <br />
-                      出版社: {series.publisher ?? "未設定"}
-                    </p>
-                  </article>
+                  <LibrarySeriesCard
+                    key={series.id}
+                    representativeCoverUrl={series.representative_cover_url}
+                    title={series.title}
+                  />
                 ))}
               </div>
             )}
