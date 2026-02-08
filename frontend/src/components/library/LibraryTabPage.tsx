@@ -14,6 +14,7 @@ type LibrarySeries = {
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const DEFAULT_ERROR_MESSAGE = "ライブラリの取得に失敗しました。";
+const SEARCH_DEBOUNCE_MS = 300;
 
 function extractErrorMessage(errorPayload: unknown, statusCode: number): string {
   if (
@@ -40,16 +41,30 @@ export function LibraryTabPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [searchKeyword, setSearchKeyword] = useState("");
+  const [debouncedSearchKeyword, setDebouncedSearchKeyword] = useState("");
 
   useEffect(() => {
-    let isCancelled = false;
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedSearchKeyword(searchKeyword);
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [searchKeyword]);
+
+  useEffect(() => {
+    const abortController = new AbortController();
 
     const fetchLibrary = async () => {
       setIsLoading(true);
       setErrorMessage(null);
 
       try {
-        const response = await fetch(`${API_BASE_URL}/api/library`);
+        const requestUrl = new URL("/api/library", API_BASE_URL);
+        requestUrl.searchParams.set("q", debouncedSearchKeyword);
+
+        const response = await fetch(requestUrl.toString(), { signal: abortController.signal });
         if (!response.ok) {
           const errorPayload = (await response.json().catch(() => null)) as unknown;
           throw new Error(extractErrorMessage(errorPayload, response.status));
@@ -60,20 +75,22 @@ export function LibraryTabPage() {
           throw new Error(DEFAULT_ERROR_MESSAGE);
         }
 
-        if (!isCancelled) {
+        if (!abortController.signal.aborted) {
           setSeriesList(payload as LibrarySeries[]);
         }
       } catch (error) {
-        if (!isCancelled) {
-          setSeriesList([]);
-          if (error instanceof Error && error.message.trim() !== "") {
-            setErrorMessage(error.message);
-          } else {
-            setErrorMessage(DEFAULT_ERROR_MESSAGE);
-          }
+        if (abortController.signal.aborted) {
+          return;
+        }
+
+        setSeriesList([]);
+        if (error instanceof Error && error.message.trim() !== "") {
+          setErrorMessage(error.message);
+        } else {
+          setErrorMessage(DEFAULT_ERROR_MESSAGE);
         }
       } finally {
-        if (!isCancelled) {
+        if (!abortController.signal.aborted) {
           setIsLoading(false);
         }
       }
@@ -82,9 +99,9 @@ export function LibraryTabPage() {
     void fetchLibrary();
 
     return () => {
-      isCancelled = true;
+      abortController.abort();
     };
-  }, [reloadKey]);
+  }, [debouncedSearchKeyword, reloadKey]);
 
   const reloadLibrary = () => {
     setReloadKey((currentValue) => currentValue + 1);
@@ -140,7 +157,11 @@ export function LibraryTabPage() {
             )}
             {!isLoading && errorMessage === null && seriesList.length === 0 && (
               <div aria-live="polite" className={styles.statePanel} role="status">
-                <p className={styles.statusText}>シリーズが登録されていません。</p>
+                <p className={styles.statusText}>
+                  {debouncedSearchKeyword.trim() === ""
+                    ? "シリーズが登録されていません。"
+                    : "検索条件に一致するシリーズがありません。"}
+                </p>
               </div>
             )}
             {!isLoading && errorMessage === null && seriesList.length > 0 && (
