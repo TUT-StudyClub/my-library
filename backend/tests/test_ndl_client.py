@@ -235,3 +235,122 @@ def test_fetch_catalog_volume_metadata_uses_runtime_settings(monkeypatch):
         "isbn": "9780000000123",
     }
     assert metadata.title == "設定確認作品"
+
+
+def test_ndl_client_search_by_keyword_returns_candidates(monkeypatch):
+    """キーワード検索で any/cnt/idx を指定し候補一覧を返す."""
+    called = {}
+    xml_text = """
+    <rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcndl="http://ndl.go.jp/dcndl/terms/">
+      <channel>
+        <item>
+          <dc:title>検索テスト作品 第3巻</dc:title>
+          <dc:creator>検索著者A</dc:creator>
+          <dc:publisher>検索出版社A</dc:publisher>
+          <dc:identifier>ISBN978-4-000-00000-2</dc:identifier>
+          <dcndl:volume>第3巻</dcndl:volume>
+          <enclosure url="https://example.com/covers/search-3.jpg" />
+        </item>
+        <item>
+          <title>検索テスト別作品 2巻</title>
+          <author>検索著者B</author>
+          <dc:identifier>urn:isbn:9784000000005</dc:identifier>
+        </item>
+      </channel>
+    </rss>
+    """.strip()
+
+    def fake_get(url: str, params: dict[str, Any], timeout: float):
+        called.update({"url": url, "params": params, "timeout": timeout})
+        return SimpleNamespace(status_code=200, text=xml_text)
+
+    monkeypatch.setattr(ndl_client.httpx, "get", fake_get)
+    request_policy = ndl_client.NdlRequestPolicy(timeout_seconds=7.0, max_retries=0)
+    client = ndl_client.NdlClient(base_url="https://example.com/ndl", request_policy=request_policy)
+
+    candidates = client.search_by_keyword("  検索テスト ", limit=2, page=3)
+
+    assert called == {
+        "url": "https://example.com/ndl",
+        "params": {"any": "検索テスト", "cnt": 2, "idx": 5},
+        "timeout": 7.0,
+    }
+    assert candidates == [
+        ndl_client.CatalogSearchCandidate(
+            title="検索テスト作品",
+            author="検索著者A",
+            publisher="検索出版社A",
+            isbn="9784000000002",
+            volume_number=3,
+            cover_url="https://example.com/covers/search-3.jpg",
+        ),
+        ndl_client.CatalogSearchCandidate(
+            title="検索テスト別作品",
+            author="検索著者B",
+            publisher=None,
+            isbn="9784000000005",
+            volume_number=2,
+            cover_url=None,
+        ),
+    ]
+
+
+def test_ndl_client_search_by_keyword_validates_parameters():
+    """空キーワードや不正なページング指定は ValueError にする."""
+    client = ndl_client.NdlClient(base_url="https://example.com/ndl")
+
+    with pytest.raises(ValueError):
+        client.search_by_keyword("   ")
+
+    with pytest.raises(ValueError):
+        client.search_by_keyword("検索", limit=0)
+
+    with pytest.raises(ValueError):
+        client.search_by_keyword("検索", page=0)
+
+
+def test_search_by_keyword_uses_runtime_settings(monkeypatch):
+    """公開入口が設定値の base_url を使って検索を呼び出す."""
+    monkeypatch.setattr(
+        ndl_client,
+        "load_settings",
+        lambda: SimpleNamespace(ndl_api_base_url="https://example.com/runtime-ndl"),
+    )
+
+    called = {}
+
+    def fake_search(
+        self: ndl_client.NdlClient, q: str, limit: int, page: int
+    ) -> list[ndl_client.CatalogSearchCandidate]:
+        called.update(
+            {
+                "base_url": self._base_url,
+                "request_policy": self._request_policy,
+                "q": q,
+                "limit": limit,
+                "page": page,
+            }
+        )
+        return [
+            ndl_client.CatalogSearchCandidate(
+                title="設定確認検索作品",
+                author=None,
+                publisher=None,
+                isbn="9784000000999",
+                volume_number=None,
+                cover_url=None,
+            )
+        ]
+
+    monkeypatch.setattr(ndl_client.NdlClient, "search_by_keyword", fake_search)
+
+    candidates = ndl_client.search_by_keyword("テスト", limit=5, page=2)
+
+    assert called == {
+        "base_url": "https://example.com/runtime-ndl",
+        "request_policy": ndl_client.DEFAULT_REQUEST_POLICY,
+        "q": "テスト",
+        "limit": 5,
+        "page": 2,
+    }
+    assert candidates[0].title == "設定確認検索作品"
