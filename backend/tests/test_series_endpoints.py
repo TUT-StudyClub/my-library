@@ -25,7 +25,12 @@ def test_create_series_and_get_series_persists_data(monkeypatch, tmp_path):
         get_response = client.get(f"/api/series/{created_series['id']}")
 
     assert get_response.status_code == 200
-    assert get_response.json() == created_series
+    payload = get_response.json()
+    assert payload["id"] == created_series["id"]
+    assert payload["title"] == created_series["title"]
+    assert payload["author"] == created_series["author"]
+    assert payload["publisher"] == created_series["publisher"]
+    assert payload["volumes"] == []
 
     with sqlite3.connect(db_path) as connection:
         row = connection.execute(
@@ -38,6 +43,77 @@ def test_create_series_and_get_series_persists_data(monkeypatch, tmp_path):
         ).fetchone()
 
     assert row == ("テスト作品", "テスト著者", "テスト出版社")
+
+
+def test_get_series_returns_series_with_registered_volumes(monkeypatch, tmp_path):
+    """Series 取得APIで登録済み Volume 一覧を返す."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    def fetch_catalog_volume(isbn: str) -> main.CatalogVolumeMetadata:
+        if isbn.endswith("0001"):
+            return main.CatalogVolumeMetadata(
+                title="巻あり作品",
+                author="巻あり著者",
+                publisher="巻あり出版社",
+                volume_number=2,
+                cover_url="https://example.com/covers/volume-2.jpg",
+            )
+
+        if isbn.endswith("0002"):
+            return main.CatalogVolumeMetadata(
+                title="巻あり作品",
+                author="巻あり著者",
+                publisher="巻あり出版社",
+                volume_number=1,
+                cover_url="https://example.com/covers/volume-1.jpg",
+            )
+
+        return main.CatalogVolumeMetadata(
+            title="巻あり作品",
+            author="巻あり著者",
+            publisher="巻あり出版社",
+            volume_number=None,
+            cover_url=None,
+        )
+
+    monkeypatch.setattr(main, "_fetch_catalog_volume_metadata", fetch_catalog_volume)
+
+    with TestClient(main.app) as client:
+        create_response = client.post(
+            "/api/series",
+            json={"title": "巻あり作品", "author": "巻あり著者", "publisher": "巻あり出版社"},
+        )
+        assert create_response.status_code == 201
+        series_id = create_response.json()["id"]
+
+        response_volume_2 = client.post("/api/volumes", json={"isbn": "9780000000001"})
+        response_volume_1 = client.post("/api/volumes", json={"isbn": "9780000000002"})
+        response_volume_unknown = client.post("/api/volumes", json={"isbn": "9780000000003"})
+        get_response = client.get(f"/api/series/{series_id}")
+
+    assert response_volume_2.status_code == 201
+    assert response_volume_1.status_code == 201
+    assert response_volume_unknown.status_code == 201
+    assert get_response.status_code == 200
+
+    payload = get_response.json()
+    assert payload["id"] == series_id
+    assert payload["title"] == "巻あり作品"
+    assert payload["author"] == "巻あり著者"
+    assert payload["publisher"] == "巻あり出版社"
+    assert [volume["isbn"] for volume in payload["volumes"]] == [
+        "9780000000002",
+        "9780000000001",
+        "9780000000003",
+    ]
+    assert [volume["volume_number"] for volume in payload["volumes"]] == [1, 2, None]
+    assert [volume["cover_url"] for volume in payload["volumes"]] == [
+        "https://example.com/covers/volume-1.jpg",
+        "https://example.com/covers/volume-2.jpg",
+        None,
+    ]
+    assert all(volume["registered_at"].endswith("Z") for volume in payload["volumes"])
 
 
 def test_get_series_returns_not_found_error_when_series_does_not_exist(monkeypatch, tmp_path):
