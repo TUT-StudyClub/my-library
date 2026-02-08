@@ -15,6 +15,7 @@ const INVALID_ISBN_MESSAGE = "ISBNは正規化後に13桁の数字である必�
 const DEFAULT_REGISTER_ERROR_MESSAGE = "登録に失敗しました。";
 const REGISTER_REQUEST_ERROR_MESSAGE = "登録リクエストの送信に失敗しました。";
 const REGISTER_SUCCESS_MESSAGE = "登録完了";
+const REGISTER_ALREADY_EXISTS_MESSAGE = "このISBNは既に登録済みです。";
 const IGNORABLE_SCAN_ERROR_NAMES = new Set([
   "NotFoundException",
   "ChecksumException",
@@ -22,7 +23,7 @@ const IGNORABLE_SCAN_ERROR_NAMES = new Set([
 ]);
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
-type RegisterRequestStatus = "idle" | "success" | "failure";
+type RegisterRequestStatus = "idle" | "success" | "alreadyExists" | "invalidIsbn" | "failure";
 
 function normalizeScannedText(rawText: string): string {
   return rawText.normalize("NFKC").trim();
@@ -59,6 +60,25 @@ function extractRegisterErrorMessage(errorPayload: unknown, statusCode: number):
   }
 
   return `${DEFAULT_REGISTER_ERROR_MESSAGE} (status: ${statusCode})`;
+}
+
+function extractRegisterErrorCode(errorPayload: unknown): string | null {
+  if (
+    typeof errorPayload === "object" &&
+    errorPayload !== null &&
+    "error" in errorPayload &&
+    typeof errorPayload.error === "object" &&
+    errorPayload.error !== null &&
+    "code" in errorPayload.error &&
+    typeof errorPayload.error.code === "string"
+  ) {
+    const errorCode = errorPayload.error.code.trim();
+    if (errorCode !== "") {
+      return errorCode;
+    }
+  }
+
+  return null;
 }
 
 function extractRegisteredIsbn(payload: unknown): string | null {
@@ -211,7 +231,7 @@ export default function RegisterPage() {
     }
 
     if (confirmedIsbn === null || !isNormalizedIsbn(confirmedIsbn)) {
-      setRegisterRequestStatus("failure");
+      setRegisterRequestStatus("invalidIsbn");
       setRegisterRequestMessage(INVALID_ISBN_MESSAGE);
       return;
     }
@@ -233,6 +253,19 @@ export default function RegisterPage() {
 
       if (!response.ok) {
         const errorPayload = (await response.json().catch(() => null)) as unknown;
+        const registerErrorCode = extractRegisterErrorCode(errorPayload);
+        if (response.status === 409 && registerErrorCode === "VOLUME_ALREADY_EXISTS") {
+          setRegisterRequestStatus("alreadyExists");
+          setRegisterRequestMessage(REGISTER_ALREADY_EXISTS_MESSAGE);
+          return;
+        }
+
+        if (response.status === 400 && registerErrorCode === "INVALID_ISBN") {
+          setRegisterRequestStatus("invalidIsbn");
+          setRegisterRequestMessage(INVALID_ISBN_MESSAGE);
+          return;
+        }
+
         setRegisterRequestStatus("failure");
         setRegisterRequestMessage(extractRegisterErrorMessage(errorPayload, response.status));
         return;
@@ -356,7 +389,11 @@ export default function RegisterPage() {
             <p
               aria-live="polite"
               className={
-                registerRequestStatus === "success" ? styles.successText : styles.errorText
+                registerRequestStatus === "success"
+                  ? styles.successText
+                  : registerRequestStatus === "alreadyExists"
+                    ? styles.infoText
+                    : styles.errorText
               }
               role="status"
             >
