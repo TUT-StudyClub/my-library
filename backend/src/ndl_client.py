@@ -111,6 +111,21 @@ class NdlClient:
         )
         return _parse_catalog_search_candidates(xml_text)
 
+    def lookup_by_identifier(self, isbn: str) -> Optional[CatalogSearchCandidate]:
+        """識別子（ISBN）でNDL Searchを検索し、最良候補1件を返す."""
+        normalized_isbn = _extract_isbn13(isbn)
+        if normalized_isbn is None:
+            raise ValueError("isbn must contain ISBN-13")
+
+        xml_text = self._fetch_xml(
+            params={
+                "isbn": normalized_isbn,
+                "cnt": 10,
+            }
+        )
+        candidates = _parse_catalog_search_candidates(xml_text)
+        return _select_best_identifier_candidate(candidates, normalized_isbn)
+
     def _fetch_xml(self, params: dict[str, Any]) -> str:
         """再試行方針に従って XML レスポンス文字列を取得する."""
         for attempt_index in range(self._request_policy.max_retries + 1):
@@ -188,6 +203,13 @@ def search_by_keyword(q: str, limit: int = 10, page: int = 1) -> list[CatalogSea
     runtime_settings = load_settings()
     client = NdlClient(base_url=runtime_settings.ndl_api_base_url)
     return client.search_by_keyword(q=q, limit=limit, page=page)
+
+
+def lookup_by_identifier(isbn: str) -> Optional[CatalogSearchCandidate]:
+    """設定値を使って識別子検索の最良候補1件を取得する."""
+    runtime_settings = load_settings()
+    client = NdlClient(base_url=runtime_settings.ndl_api_base_url)
+    return client.lookup_by_identifier(isbn=isbn)
 
 
 def _has_retry_budget(max_retries: int, attempt_index: int) -> bool:
@@ -306,6 +328,20 @@ def _extract_volume_number(text_value: Optional[str]) -> Optional[int]:
         return None
 
     return int(matched.group(1))
+
+
+def _select_best_identifier_candidate(
+    candidates: list[CatalogSearchCandidate], normalized_isbn: str
+) -> Optional[CatalogSearchCandidate]:
+    """識別子検索候補から最良候補を1件選択する."""
+    for candidate in candidates:
+        if candidate.isbn == normalized_isbn:
+            return candidate
+
+    if len(candidates) == 0:
+        return None
+
+    return candidates[0]
 
 
 def _split_title_and_volume_number(title: str) -> tuple[str, Optional[int]]:
