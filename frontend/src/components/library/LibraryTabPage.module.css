@@ -74,6 +74,10 @@
   margin-bottom: 12px;
 }
 
+.seriesContent {
+  min-height: 148px;
+}
+
 .searchInput {
   background: #ffffff;
   border: 1px solid #cbd5e1;
@@ -113,14 +117,42 @@
   line-height: 1.45;
 }
 
+.statePanel {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  justify-content: center;
+  min-height: 148px;
+  padding: 16px;
+  text-align: center;
+}
+
 .statusText {
   color: #334155;
   font-size: 0.95rem;
+  margin: 0;
 }
 
 .errorText {
   color: #b91c1c;
   font-size: 0.95rem;
+  margin: 0;
+}
+
+.retryButton {
+  appearance: none;
+  background: #0f172a;
+  border: none;
+  border-radius: 9999px;
+  color: #f8fafc;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 8px 16px;
 }
 
 @media (max-width: 640px) {
