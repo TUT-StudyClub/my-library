@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { consumeLibraryRefreshSignal } from "@/lib/libraryRefreshSignal";
 import { LibrarySeriesCard } from "./LibrarySeriesCard";
 import styles from "./LibraryTabPage.module.css";
 
@@ -107,9 +108,26 @@ export function LibraryTabPage() {
     };
   }, [normalizedSearchKeyword, reloadKey]);
 
-  const reloadLibrary = () => {
+  const reloadLibrary = useCallback(() => {
     setReloadKey((currentValue) => currentValue + 1);
-  };
+  }, []);
+
+  useEffect(() => {
+    const refreshLibraryIfNeeded = () => {
+      if (consumeLibraryRefreshSignal()) {
+        reloadLibrary();
+      }
+    };
+
+    refreshLibraryIfNeeded();
+    window.addEventListener("focus", refreshLibraryIfNeeded);
+    window.addEventListener("pageshow", refreshLibraryIfNeeded);
+
+    return () => {
+      window.removeEventListener("focus", refreshLibraryIfNeeded);
+      window.removeEventListener("pageshow", refreshLibraryIfNeeded);
+    };
+  }, [reloadLibrary]);
 
   return (
     <main className={styles.page}>
