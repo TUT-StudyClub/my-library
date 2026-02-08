@@ -11,6 +11,7 @@ const UNSUPPORTED_CAMERA_MESSAGE = "このブラウザではカメラ機能を�
 const SCANNER_ERROR_MESSAGE = "読み取り処理でエラーが発生しました。";
 const ISBN_EXTRACTION_ERROR_MESSAGE =
   "読み取り文字列からISBNを抽出できませんでした。別の角度で再読み取りしてください。";
+const EMPTY_ISBN_MESSAGE = "ISBNを入力してください。";
 const INVALID_ISBN_MESSAGE = "ISBNは正規化後に13桁の数字である必要があります。";
 const DEFAULT_REGISTER_ERROR_MESSAGE = "登録に失敗しました。";
 const REGISTER_REQUEST_ERROR_MESSAGE = "登録リクエストの送信に失敗しました。";
@@ -127,6 +128,31 @@ function extractNormalizedIsbn(scanText: string): string | null {
   }
 
   return null;
+}
+
+function validateManualIsbnInput(rawText: string): {
+  normalizedIsbn: string | null;
+  errorMessage: string | null;
+} {
+  if (normalizeScannedText(rawText) === "") {
+    return {
+      normalizedIsbn: null,
+      errorMessage: EMPTY_ISBN_MESSAGE,
+    };
+  }
+
+  const normalizedIsbn = toNormalizedIsbn(rawText);
+  if (normalizedIsbn === null) {
+    return {
+      normalizedIsbn: null,
+      errorMessage: INVALID_ISBN_MESSAGE,
+    };
+  }
+
+  return {
+    normalizedIsbn,
+    errorMessage: null,
+  };
 }
 
 export default function RegisterPage() {
@@ -323,10 +349,11 @@ export default function RegisterPage() {
   }, [confirmedIsbn, isManualInputOpen, stopCamera]);
 
   const applyManualIsbn = useCallback(() => {
-    const normalizedIsbn = toNormalizedIsbn(manualIsbnInput);
+    const { normalizedIsbn, errorMessage: validationErrorMessage } =
+      validateManualIsbnInput(manualIsbnInput);
     if (normalizedIsbn === null) {
       setConfirmedIsbn(null);
-      setManualInputErrorMessage(INVALID_ISBN_MESSAGE);
+      setManualInputErrorMessage(validationErrorMessage);
       return;
     }
 
@@ -340,15 +367,31 @@ export default function RegisterPage() {
       return;
     }
 
-    if (confirmedIsbn === null || !isNormalizedIsbn(confirmedIsbn)) {
+    let requestIsbn = confirmedIsbn;
+    let validationErrorMessage: string | null = null;
+    if (isManualInputOpen) {
+      const manualValidation = validateManualIsbnInput(manualIsbnInput);
+      requestIsbn = manualValidation.normalizedIsbn;
+      validationErrorMessage = manualValidation.errorMessage;
+      if (manualValidation.errorMessage !== null) {
+        setConfirmedIsbn(null);
+        setManualInputErrorMessage(manualValidation.errorMessage);
+      } else {
+        setConfirmedIsbn(manualValidation.normalizedIsbn);
+        setManualInputErrorMessage(null);
+        setIsbnErrorMessage(null);
+      }
+    }
+
+    if (requestIsbn === null || !isNormalizedIsbn(requestIsbn)) {
       setRegisterRequestStatus("invalidIsbn");
-      setRegisterRequestMessage(INVALID_ISBN_MESSAGE);
+      setRegisterRequestMessage(validationErrorMessage ?? INVALID_ISBN_MESSAGE);
       return;
     }
 
     const nowMilliseconds = Date.now();
     const isDuplicateWithinIgnoreWindow =
-      latestProcessedIsbnRef.current === confirmedIsbn &&
+      latestProcessedIsbnRef.current === requestIsbn &&
       nowMilliseconds - latestProcessedAtMillisecondsRef.current <
         RECENT_PROCESSED_ISBN_IGNORE_MILLISECONDS;
     if (isDuplicateWithinIgnoreWindow) {
@@ -357,7 +400,6 @@ export default function RegisterPage() {
       return;
     }
 
-    const requestIsbn = confirmedIsbn;
     isSubmittingRegisterRef.current = true;
     setRegisterRequestStatus("idle");
     setRegisterRequestMessage(null);
@@ -407,7 +449,7 @@ export default function RegisterPage() {
       isSubmittingRegisterRef.current = false;
       setIsSubmittingRegister(false);
     }
-  }, [confirmedIsbn]);
+  }, [confirmedIsbn, isManualInputOpen, manualIsbnInput]);
 
   return (
     <main className={styles.page}>
