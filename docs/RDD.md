@@ -346,6 +346,85 @@
 
 * 4xx/5xx の形式は `docs/DEVELOPMENT_RULES.md` の「APIエラーレスポンス規約」に従う
 
+#### **8.1.2 POST /api/volumes（巻登録）**
+
+スキャン/手入力/検索結果から、ISBN指定で所持巻を1件登録するエンドポイント。
+
+**HTTPメソッド/パス**
+
+* `POST /api/volumes`
+
+**リクエスト**
+
+`Content-Type: application/json`
+
+| フィールド | 型 | 必須 | 説明 |
+|---|---|---|---|
+| `isbn` | string | 必須 | ISBN。入力時はハイフン付き・全角数字・前後空白を許容し、サーバー側で正規化する |
+
+`isbn` は `docs/DEVELOPMENT_RULES.md` の「識別子（ISBN）正規化ルール」に従って正規化し、正規化後が半角数字13桁でない場合はエラーとする。
+
+**リクエスト例**
+
+```json
+{
+  "isbn": " 978-4-08-883644-0 "
+}
+```
+
+**レスポンス（201 Created）**
+
+| フィールド | 型 | `null` | 説明 |
+|---|---|---|---|
+| `series` | object | 不可 | 登録先Series情報 |
+| `series.id` | number | 不可 | Series ID |
+| `series.title` | string | 不可 | 作品タイトル |
+| `series.author` | string | 可 | 著者名 |
+| `series.publisher` | string | 可 | 出版社名 |
+| `volume` | object | 不可 | 登録した巻情報 |
+| `volume.isbn` | string | 不可 | 正規化済みISBN（半角数字13桁） |
+| `volume.volume_number` | number | 可 | 巻数（取得できない場合は `null`） |
+| `volume.cover_url` | string | 可 | 表紙URL（取得できない場合は `null`） |
+| `volume.registered_at` | string | 不可 | 登録日時（ISO 8601） |
+
+**レスポンス例（201 Created）**
+
+```json
+{
+  "series": {
+    "id": 12,
+    "title": "葬送のフリーレン",
+    "author": "山田鐘人",
+    "publisher": "小学館"
+  },
+  "volume": {
+    "isbn": "9784088836440",
+    "volume_number": 1,
+    "cover_url": "https://example.com/covers/frieren-1.jpg",
+    "registered_at": "2026-02-08T03:21:45Z"
+  }
+}
+```
+
+**重複時レスポンス（409 Conflict）**
+
+同一ISBN（正規化後）が既に `volume` テーブルに存在する場合は、新規登録せず `409` を返す。
+
+```json
+{
+  "error": {
+    "code": "VOLUME_ALREADY_EXISTS",
+    "message": "Volume already exists",
+    "details": {
+      "isbn": "9784088836440",
+      "seriesId": 12
+    }
+  }
+}
+```
+
+`details.seriesId` を使い、フロントは既存作品詳細（`/api/series/{series_id}`）への誘導を実装できる。
+
 ### **8.2 外部検索（NDL Search）**
 
 * `GET /api/catalog/search?q=...&limit=...`（検索タブ用：候補＋所持判定）  
