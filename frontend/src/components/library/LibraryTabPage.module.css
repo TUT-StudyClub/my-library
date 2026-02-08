@@ -25,14 +25,18 @@
 
 .registerButton {
   appearance: none;
+  align-items: center;
   background: #0f172a;
   border: none;
   border-radius: 9999px;
   color: #f8fafc;
   cursor: pointer;
+  display: inline-flex;
   font-size: 0.95rem;
   font-weight: 600;
+  justify-content: center;
   padding: 10px 20px;
+  text-decoration: none;
 }
 
 .tabs {
