@@ -33,6 +33,7 @@ type RegisterRequestStatus =
   | "recentlyProcessed"
   | "invalidIsbn"
   | "failure";
+type ProgressTone = "neutral" | "success" | "warning" | "error";
 
 function normalizeScannedText(rawText: string): string {
   return rawText.normalize("NFKC").trim();
@@ -155,6 +156,68 @@ export default function RegisterPage() {
           null,
           2
         );
+  let progressStatusLabel = "待機中";
+  let nextActionLabel = "「カメラ起動」を押してください。";
+  let progressTone: ProgressTone = "neutral";
+
+  if (errorMessage !== null) {
+    progressStatusLabel = "カメラ利用不可";
+    nextActionLabel = "ブラウザのカメラ権限を確認して、再度「カメラ起動」を押してください。";
+    progressTone = "error";
+  } else if (isStartingCamera) {
+    progressStatusLabel = "カメラ起動中";
+    nextActionLabel = "プレビューが表示されるまで待ってください。";
+    progressTone = "neutral";
+  } else if (!isCameraActive) {
+    progressStatusLabel = "カメラ未起動";
+    nextActionLabel = "「カメラ起動」を押してバーコード読み取りを開始してください。";
+    progressTone = "neutral";
+  } else if (isSubmittingRegister) {
+    progressStatusLabel = "登録API実行中";
+    nextActionLabel = "完了までそのまま待ってください。";
+    progressTone = "neutral";
+  } else if (registerRequestStatus === "success") {
+    progressStatusLabel = "登録完了";
+    nextActionLabel =
+      "続けて登録する場合は次のバーコードを読み取って「登録する」を押してください。";
+    progressTone = "success";
+  } else if (registerRequestStatus === "alreadyExists") {
+    progressStatusLabel = "登録済みISBN";
+    nextActionLabel = "別の本を登録する場合はバーコードを読み替えてください。";
+    progressTone = "warning";
+  } else if (registerRequestStatus === "recentlyProcessed") {
+    progressStatusLabel = "同一ISBN待機中";
+    nextActionLabel = "同じISBNは10秒間無視されます。時間をおいて再実行してください。";
+    progressTone = "warning";
+  } else if (registerRequestStatus === "failure") {
+    progressStatusLabel = "登録失敗";
+    nextActionLabel = "通信状況を確認し、同じISBNでもう一度「登録する」を押してください。";
+    progressTone = "error";
+  } else if (confirmedIsbn !== null) {
+    progressStatusLabel = "ISBN確定済み";
+    nextActionLabel = "内容を確認して「登録する」を押してください。";
+    progressTone = "success";
+  } else if (isbnErrorMessage !== null) {
+    progressStatusLabel = "ISBN未確定";
+    nextActionLabel = "バーコードの角度や距離を変えて、再度読み取ってください。";
+    progressTone = "warning";
+  } else if (scanResult !== null) {
+    progressStatusLabel = "読み取り中";
+    nextActionLabel = "ISBNが13桁で確定するまでバーコードを合わせ続けてください。";
+    progressTone = "neutral";
+  } else {
+    progressStatusLabel = "バーコード待機中";
+    nextActionLabel = "プレビュー中央にバーコードを合わせてください。";
+    progressTone = "neutral";
+  }
+  const progressToneClassName =
+    progressTone === "success"
+      ? styles.progressPanelSuccess
+      : progressTone === "warning"
+        ? styles.progressPanelWarning
+        : progressTone === "error"
+          ? styles.progressPanelError
+          : styles.progressPanelNeutral;
 
   const stopCamera = useCallback(() => {
     scannerControlsRef.current?.stop();
@@ -332,6 +395,12 @@ export default function RegisterPage() {
           <p className={styles.sectionDescription}>
             カメラ起動後に本のバーコードをプレビュー中央へ合わせてください。
           </p>
+          <div className={`${styles.progressPanel} ${progressToneClassName}`}>
+            <p className={styles.progressLabel}>現在状態</p>
+            <p className={styles.progressValue}>{progressStatusLabel}</p>
+            <p className={styles.progressLabel}>次にすること</p>
+            <p className={styles.progressGuide}>{nextActionLabel}</p>
+          </div>
 
           <div className={styles.previewFrame}>
             <video
