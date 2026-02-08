@@ -2,7 +2,7 @@ import sqlite3
 
 from fastapi.testclient import TestClient
 
-from src import main
+from src import main, ndl_client
 
 
 def test_create_volume_persists_series_and_volume(monkeypatch, tmp_path):
@@ -171,6 +171,46 @@ def test_create_volume_rejects_invalid_isbn(monkeypatch, tmp_path):
             "code": "INVALID_ISBN",
             "message": "isbn must be 13 digits",
             "details": {"isbn": "978-abc"},
+        }
+    }
+
+
+def test_create_volume_returns_external_failure_details_when_ndl_timeout(monkeypatch, tmp_path):
+    """外部タイムアウト時、呼び出し側判定用の失敗情報を返す."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    def raise_ndl_timeout(_isbn: str) -> main.CatalogVolumeMetadata:
+        raise ndl_client.NdlClientError(
+            status_code=504,
+            code="NDL_API_TIMEOUT",
+            message="NDL API request timed out",
+            details={
+                "upstream": "NDL Search",
+                "externalFailure": True,
+                "failureType": "timeout",
+                "retryable": True,
+                "timeoutSeconds": 10,
+            },
+        )
+
+    monkeypatch.setattr(main, "fetch_catalog_volume_metadata", raise_ndl_timeout)
+
+    with TestClient(main.app) as client:
+        response = client.post("/api/volumes", json={"isbn": "9780000000005"})
+
+    assert response.status_code == 504
+    assert response.json() == {
+        "error": {
+            "code": "NDL_API_TIMEOUT",
+            "message": "NDL API request timed out",
+            "details": {
+                "upstream": "NDL Search",
+                "externalFailure": True,
+                "failureType": "timeout",
+                "retryable": True,
+                "timeoutSeconds": 10,
+            },
         }
     }
 
