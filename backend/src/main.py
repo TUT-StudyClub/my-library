@@ -766,6 +766,56 @@ async def delete_volume(
     }
 
 
+@app.delete("/api/series/{series_id}/volumes")
+async def delete_series_volumes(
+    series_id: int,
+    connection: Annotated[sqlite3.Connection, Depends(get_db_connection)],
+):
+    """Series配下のVolumeを含めてSeriesを物理削除する."""
+    series_row = connection.execute(
+        """
+        SELECT id
+        FROM series
+        WHERE id = ?;
+        """,
+        (series_id,),
+    ).fetchone()
+    if series_row is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "SERIES_NOT_FOUND",
+                "message": "Series not found",
+                "details": {"seriesId": series_id},
+            },
+        )
+
+    volume_count_row = connection.execute(
+        """
+        SELECT COUNT(*)
+        FROM volume
+        WHERE series_id = ?;
+        """,
+        (series_id,),
+    ).fetchone()
+    deleted_volume_count = int(volume_count_row[0]) if volume_count_row is not None else 0
+
+    connection.execute(
+        """
+        DELETE FROM series
+        WHERE id = ?;
+        """,
+        (series_id,),
+    )
+
+    return {
+        "deleted": {
+            "seriesId": series_id,
+            "deletedVolumeCount": deleted_volume_count,
+        }
+    }
+
+
 @app.get("/api/series", response_model=list[SeriesResponse])
 async def list_series(connection: Annotated[sqlite3.Connection, Depends(get_db_connection)]):
     """登録済み Series 一覧を返す（最小読み取り例）."""
