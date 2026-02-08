@@ -68,6 +68,18 @@
   padding: 20px;
 }
 
+.searchSection {
+  padding: 16px 20px;
+}
+
+.searchLabel {
+  color: #334155;
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
 .sectionTitle {
   font-size: 1.05rem;
   font-weight: 700;
