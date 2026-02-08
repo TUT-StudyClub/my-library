@@ -5,7 +5,6 @@ from typing import Any, Optional
 from xml.etree import ElementTree as ET
 
 import httpx
-from fastapi import HTTPException
 
 from src.config import load_settings
 
@@ -13,6 +12,7 @@ NDL_XML_NAMESPACES = {
     "dc": "http://purl.org/dc/elements/1.1/",
     "dcndl": "http://ndl.go.jp/dcndl/terms/",
 }
+UPSTREAM_NAME = "NDL Search"
 
 
 @dataclass(frozen=True)
@@ -38,6 +38,31 @@ class CatalogVolumeMetadata:
     cover_url: Optional[str]
 
 
+class NdlClientError(Exception):
+    """NDLクライアント失敗時に統一エラー情報を保持する例外."""
+
+    def __init__(
+        self,
+        status_code: int,
+        code: str,
+        message: str,
+        details: Optional[dict[str, Any]] = None,
+    ):
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = code
+        self.message = message
+        self.details = dict(details or {})
+
+    def to_http_exception_detail(self) -> dict[str, Any]:
+        """FastAPIのHTTPException detailに変換する."""
+        return {
+            "code": self.code,
+            "message": self.message,
+            "details": dict(self.details),
+        }
+
+
 class NdlClient:
     """NDL Search API クライアント."""
 
@@ -58,18 +83,17 @@ class NdlClient:
                 if _has_retry_budget(self._request_policy.max_retries, attempt_index):
                     continue
 
-                raise HTTPException(
+                raise NdlClientError(
                     status_code=504,
-                    detail={
-                        "code": "NDL_API_TIMEOUT",
-                        "message": "NDL API request timed out",
-                        "details": {
-                            "upstream": "NDL Search",
-                            "timeoutSeconds": _format_timeout_seconds(
-                                self._request_policy.timeout_seconds
-                            ),
-                        },
-                    },
+                    code="NDL_API_TIMEOUT",
+                    message="NDL API request timed out",
+                    details=_build_external_failure_details(
+                        failure_type="timeout",
+                        retryable=True,
+                        timeout_seconds=_format_timeout_seconds(
+                            self._request_policy.timeout_seconds
+                        ),
+                    ),
                 ) from error
             except httpx.HTTPError as error:
                 if _is_retryable_http_error(error) and _has_retry_budget(
@@ -77,13 +101,14 @@ class NdlClient:
                 ):
                     continue
 
-                raise HTTPException(
+                retryable = _is_retryable_http_error(error)
+                raise NdlClientError(
                     status_code=502,
-                    detail={
-                        "code": "NDL_API_BAD_GATEWAY",
-                        "message": "Failed to connect NDL API",
-                        "details": {"upstream": "NDL Search"},
-                    },
+                    code="NDL_API_BAD_GATEWAY",
+                    message="Failed to connect NDL API",
+                    details=_build_external_failure_details(
+                        failure_type="communication", retryable=retryable
+                    ),
                 ) from error
 
             if response.status_code == 200:
@@ -95,13 +120,16 @@ class NdlClient:
             ):
                 continue
 
-            raise HTTPException(
+            retryable = response.status_code in self._request_policy.retryable_status_codes
+            raise NdlClientError(
                 status_code=502,
-                detail={
-                    "code": "NDL_API_BAD_GATEWAY",
-                    "message": "NDL API returned non-200 status",
-                    "details": {"upstream": "NDL Search", "statusCode": response.status_code},
-                },
+                code="NDL_API_BAD_GATEWAY",
+                message="NDL API returned non-200 status",
+                details=_build_external_failure_details(
+                    failure_type="invalidResponse",
+                    retryable=retryable,
+                    status_code=response.status_code,
+                ),
             )
 
         raise RuntimeError("unreachable")
@@ -122,6 +150,26 @@ def _has_retry_budget(max_retries: int, attempt_index: int) -> bool:
 def _is_retryable_http_error(error: httpx.HTTPError) -> bool:
     """再試行対象の通信エラーか判定する."""
     return isinstance(error, httpx.TransportError)
+
+
+def _build_external_failure_details(
+    failure_type: str,
+    retryable: bool,
+    timeout_seconds: Optional[Any] = None,
+    status_code: Optional[int] = None,
+) -> dict[str, Any]:
+    """外部依存失敗の機械判定向け details を構築する."""
+    details: dict[str, Any] = {
+        "upstream": UPSTREAM_NAME,
+        "externalFailure": True,
+        "failureType": failure_type,
+        "retryable": retryable,
+    }
+    if timeout_seconds is not None:
+        details["timeoutSeconds"] = timeout_seconds
+    if status_code is not None:
+        details["statusCode"] = status_code
+    return details
 
 
 def _format_timeout_seconds(timeout_seconds: float) -> Any:
@@ -185,13 +233,14 @@ def _split_title_and_volume_number(title: str) -> tuple[str, Optional[int]]:
     """タイトル末尾の巻数表現を分離する."""
     normalized_title = _normalize_optional_text(title)
     if normalized_title is None:
-        raise HTTPException(
+        raise NdlClientError(
             status_code=502,
-            detail={
-                "code": "NDL_API_BAD_GATEWAY",
-                "message": "NDL API returned invalid title",
-                "details": {"upstream": "NDL Search"},
-            },
+            code="NDL_API_BAD_GATEWAY",
+            message="NDL API returned invalid title",
+            details=_build_external_failure_details(
+                failure_type="invalidResponse",
+                retryable=False,
+            ),
         )
 
     patterns = [
@@ -220,23 +269,26 @@ def _parse_catalog_volume_metadata(xml_text: str, isbn: str) -> CatalogVolumeMet
     try:
         root = ET.fromstring(xml_text)
     except ET.ParseError as error:
-        raise HTTPException(
+        raise NdlClientError(
             status_code=502,
-            detail={
-                "code": "NDL_API_BAD_GATEWAY",
-                "message": "NDL API returned invalid XML",
-                "details": {"upstream": "NDL Search"},
-            },
+            code="NDL_API_BAD_GATEWAY",
+            message="NDL API returned invalid XML",
+            details=_build_external_failure_details(
+                failure_type="invalidResponse",
+                retryable=False,
+            ),
         ) from error
 
     item = root.find("./channel/item")
     if item is None:
-        raise HTTPException(
+        raise NdlClientError(
             status_code=404,
-            detail={
-                "code": "CATALOG_ITEM_NOT_FOUND",
-                "message": "Catalog item not found",
-                "details": {"isbn": isbn},
+            code="CATALOG_ITEM_NOT_FOUND",
+            message="Catalog item not found",
+            details={
+                "isbn": isbn,
+                "upstream": UPSTREAM_NAME,
+                "externalFailure": False,
             },
         )
 
@@ -245,13 +297,14 @@ def _parse_catalog_volume_metadata(xml_text: str, isbn: str) -> CatalogVolumeMet
         title_text = _extract_first_non_empty_text(item, "title")
 
     if title_text is None:
-        raise HTTPException(
+        raise NdlClientError(
             status_code=502,
-            detail={
-                "code": "NDL_API_BAD_GATEWAY",
-                "message": "NDL API returned invalid title",
-                "details": {"upstream": "NDL Search"},
-            },
+            code="NDL_API_BAD_GATEWAY",
+            message="NDL API returned invalid title",
+            details=_build_external_failure_details(
+                failure_type="invalidResponse",
+                retryable=False,
+            ),
         )
 
     series_title, volume_number_from_title = _split_title_and_volume_number(title_text)
