@@ -27,6 +27,9 @@ from src.ndl_client import (
     fetch_catalog_volume_metadata,
     search_by_keyword,
 )
+from src.ndl_client import (
+    lookup_by_identifier as ndl_lookup_by_identifier,
+)
 
 load_dotenv()
 settings = load_settings()
@@ -234,6 +237,42 @@ def _search_catalog_by_keyword(q: str, limit: int) -> list[CatalogSearchCandidat
             status_code=error.status_code,
             detail=error.to_http_exception_detail(),
         ) from error
+
+
+def _lookup_catalog_by_identifier(isbn: str) -> CatalogSearchCandidate:
+    """識別子でNDL Searchを検索し、最良候補1件を返す."""
+    try:
+        candidate = ndl_lookup_by_identifier(isbn=isbn)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "INVALID_ISBN",
+                "message": "isbn must be 13 digits",
+                "details": {"isbn": isbn, "reason": str(error)},
+            },
+        ) from error
+    except NdlClientError as error:
+        raise HTTPException(
+            status_code=error.status_code,
+            detail=error.to_http_exception_detail(),
+        ) from error
+
+    if candidate is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "CATALOG_ITEM_NOT_FOUND",
+                "message": "Catalog item not found",
+                "details": {
+                    "isbn": isbn,
+                    "upstream": "NDL Search",
+                    "externalFailure": False,
+                },
+            },
+        )
+
+    return candidate
 
 
 def _find_or_create_series(
@@ -707,6 +746,23 @@ async def search_catalog(
         )
         for candidate in candidates
     ]
+
+
+@app.get("/api/catalog/lookup", response_model=CatalogSearchCandidateResponse)
+async def lookup_catalog(isbn: str):
+    """外部カタログを識別子検索し、最良候補1件を返す."""
+    normalized_isbn = _normalize_isbn(isbn)
+    candidate: CatalogSearchCandidate = await run_in_threadpool(
+        _lookup_catalog_by_identifier, normalized_isbn
+    )
+    return CatalogSearchCandidateResponse(
+        title=candidate.title,
+        author=candidate.author,
+        publisher=candidate.publisher,
+        isbn=candidate.isbn,
+        volume_number=candidate.volume_number,
+        cover_url=candidate.cover_url,
+    )
 
 
 @app.get("/api/series/{series_id}", response_model=SeriesDetailResponse)
