@@ -130,6 +130,7 @@ export default function RegisterPage() {
   const [confirmedIsbn, setConfirmedIsbn] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isbnErrorMessage, setIsbnErrorMessage] = useState<string | null>(null);
+  const isSubmittingRegisterRef = useRef(false);
   const [isSubmittingRegister, setIsSubmittingRegister] = useState(false);
   const [registerRequestStatus, setRegisterRequestStatus] = useState<RegisterRequestStatus>("idle");
   const [registerRequestMessage, setRegisterRequestMessage] = useState<string | null>(null);
@@ -226,7 +227,7 @@ export default function RegisterPage() {
   }, [isCameraActive, isStartingCamera, stopCamera]);
 
   const submitRegisterRequest = useCallback(async () => {
-    if (isSubmittingRegister) {
+    if (isSubmittingRegisterRef.current) {
       return;
     }
 
@@ -236,6 +237,7 @@ export default function RegisterPage() {
       return;
     }
 
+    isSubmittingRegisterRef.current = true;
     setRegisterRequestStatus("idle");
     setRegisterRequestMessage(null);
     setIsSubmittingRegister(true);
@@ -279,9 +281,10 @@ export default function RegisterPage() {
       setRegisterRequestStatus("failure");
       setRegisterRequestMessage(REGISTER_REQUEST_ERROR_MESSAGE);
     } finally {
+      isSubmittingRegisterRef.current = false;
       setIsSubmittingRegister(false);
     }
-  }, [confirmedIsbn, isSubmittingRegister]);
+  }, [confirmedIsbn]);
 
   return (
     <main className={styles.page}>
