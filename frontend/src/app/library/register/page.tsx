@@ -3,6 +3,7 @@
 import { BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { publishLibraryRefreshSignal } from "@/lib/libraryRefreshSignal";
 import styles from "./page.module.css";
 
 const DEFAULT_CAMERA_ERROR_MESSAGE =
@@ -442,6 +443,7 @@ export default function RegisterPage() {
       const registeredIsbn = extractRegisteredIsbn(successPayload) ?? requestIsbn;
       setRegisterRequestStatus("success");
       setRegisterRequestMessage(`${REGISTER_SUCCESS_MESSAGE}（ISBN: ${registeredIsbn}）`);
+      publishLibraryRefreshSignal();
     } catch {
       setRegisterRequestStatus("failure");
       setRegisterRequestMessage(REGISTER_REQUEST_ERROR_MESSAGE);
