@@ -269,13 +269,18 @@
 
 ### **エラー形式（統一）**
 
-{  
-  "error": {  
-    "code": "SOME\_CODE",  
-    "message": "Human readable message.",  
-    "details": {}  
-  }  
+* エラー応答の正式仕様は `docs/DEVELOPMENT_RULES.md` の「APIエラーレスポンス規約」に従う  
+* MVPでは以下のフォーマットを固定で採用する
+
+```json
+{
+  "error": {
+    "code": "SOME_ERROR_CODE",
+    "message": "エラー内容を示すメッセージ",
+    "details": {}
+  }
 }
+```
 
 ---
 
