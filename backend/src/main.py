@@ -15,6 +15,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src.config import load_settings
 from src.db import check_database_connection, get_db_connection, initialize_database
+from src.library_queries import fetch_library_series
 
 load_dotenv()
 settings = load_settings()
@@ -124,6 +125,16 @@ class SeriesResponse(BaseModel):
     title: str
     author: Optional[str]
     publisher: Optional[str]
+
+
+class LibrarySeriesResponse(BaseModel):
+    """ライブラリ一覧向けの Series レスポンス."""
+
+    id: int
+    title: str
+    author: Optional[str]
+    publisher: Optional[str]
+    representative_cover_url: Optional[str]
 
 
 def _fetch_series_list(connection: sqlite3.Connection) -> list[SeriesResponse]:
@@ -254,6 +265,25 @@ async def create_series(
 async def list_series(connection: Annotated[sqlite3.Connection, Depends(get_db_connection)]):
     """登録済み Series 一覧を返す（最小読み取り例）."""
     return _fetch_series_list(connection)
+
+
+@app.get("/api/library", response_model=list[LibrarySeriesResponse])
+async def list_library(
+    connection: Annotated[sqlite3.Connection, Depends(get_db_connection)],
+    q: Optional[str] = None,
+):
+    """ライブラリ一覧を返す."""
+    series_list = fetch_library_series(connection=connection, search_query=q)
+    return [
+        LibrarySeriesResponse(
+            id=series.id,
+            title=series.title,
+            author=series.author,
+            publisher=series.publisher,
+            representative_cover_url=series.representative_cover_url,
+        )
+        for series in series_list
+    ]
 
 
 @app.get("/api/series/{series_id}", response_model=SeriesResponse)
