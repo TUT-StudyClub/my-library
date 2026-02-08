@@ -64,6 +64,55 @@
   margin: 0 0 16px;
 }
 
+.progressPanel {
+  border: 1px solid #cbd5e1;
+  border-left-width: 6px;
+  border-radius: 12px;
+  margin: 0 0 14px;
+  padding: 12px;
+}
+
+.progressPanelNeutral {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+.progressPanelSuccess {
+  background: #f0fdf4;
+  border-color: #86efac;
+}
+
+.progressPanelWarning {
+  background: #fff7ed;
+  border-color: #fdba74;
+}
+
+.progressPanelError {
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+
+.progressLabel {
+  color: #475569;
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.progressValue {
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 4px 0 10px;
+}
+
+.progressGuide {
+  color: #1e293b;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin: 4px 0 0;
+}
+
 .previewFrame {
   align-items: center;
   background: #ffffff;
