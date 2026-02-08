@@ -153,6 +153,33 @@
   word-break: break-all;
 }
 
+.resultDescription {
+  color: #475569;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  margin: 8px 0 0;
+}
+
+.payloadPanel {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  margin-top: 14px;
+  padding: 12px;
+}
+
+.payloadValue {
+  background: #0f172a;
+  border-radius: 8px;
+  color: #f8fafc;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, "Courier New", monospace;
+  font-size: 0.82rem;
+  margin: 0;
+  overflow-x: auto;
+  padding: 10px;
+  white-space: pre-wrap;
+}
+
 @media (max-width: 640px) {
   .cameraPreview {
     max-height: 280px;
