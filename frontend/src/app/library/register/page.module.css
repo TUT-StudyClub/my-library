@@ -207,6 +207,12 @@
   margin: 12px 0 0;
 }
 
+.infoText {
+  color: #9a3412;
+  font-size: 0.9rem;
+  margin: 12px 0 0;
+}
+
 @media (max-width: 640px) {
   .cameraPreview {
     max-height: 280px;
