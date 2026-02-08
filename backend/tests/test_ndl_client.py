@@ -354,3 +354,150 @@ def test_search_by_keyword_uses_runtime_settings(monkeypatch):
         "page": 2,
     }
     assert candidates[0].title == "設定確認検索作品"
+
+
+def test_ndl_client_lookup_by_identifier_returns_exact_isbn_candidate(monkeypatch):
+    """識別子検索は入力ISBNと一致する候補を優先して1件返す."""
+    called = {}
+    xml_text = """
+    <rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcndl="http://ndl.go.jp/dcndl/terms/">
+      <channel>
+        <item>
+          <dc:title>識別子候補作品A 第2巻</dc:title>
+          <dc:creator>著者A</dc:creator>
+          <dc:identifier>9784000000005</dc:identifier>
+        </item>
+        <item>
+          <dc:title>識別子候補作品B 第1巻</dc:title>
+          <dc:creator>著者B</dc:creator>
+          <dc:publisher>出版社B</dc:publisher>
+          <dc:identifier>urn:isbn:9784000000002</dc:identifier>
+          <enclosure url="https://example.com/covers/lookup-b-1.jpg" />
+        </item>
+      </channel>
+    </rss>
+    """.strip()
+
+    def fake_get(url: str, params: dict[str, Any], timeout: float):
+        called.update({"url": url, "params": params, "timeout": timeout})
+        return SimpleNamespace(status_code=200, text=xml_text)
+
+    monkeypatch.setattr(ndl_client.httpx, "get", fake_get)
+    request_policy = ndl_client.NdlRequestPolicy(timeout_seconds=6.0, max_retries=0)
+    client = ndl_client.NdlClient(base_url="https://example.com/ndl", request_policy=request_policy)
+
+    candidate = client.lookup_by_identifier("ISBN978-4-000-00000-2")
+
+    assert called == {
+        "url": "https://example.com/ndl",
+        "params": {"isbn": "9784000000002", "cnt": 10},
+        "timeout": 6.0,
+    }
+    assert candidate == ndl_client.CatalogSearchCandidate(
+        title="識別子候補作品B",
+        author="著者B",
+        publisher="出版社B",
+        isbn="9784000000002",
+        volume_number=1,
+        cover_url="https://example.com/covers/lookup-b-1.jpg",
+    )
+
+
+def test_ndl_client_lookup_by_identifier_returns_first_when_no_exact_match(monkeypatch):
+    """一致候補が無い場合は先頭候補を最良候補として返す."""
+    xml_text = """
+    <rss xmlns:dc="http://purl.org/dc/elements/1.1/">
+      <channel>
+        <item>
+          <dc:title>識別子候補作品C 第4巻</dc:title>
+          <dc:identifier>9784000000004</dc:identifier>
+        </item>
+        <item>
+          <dc:title>識別子候補作品D 第5巻</dc:title>
+          <dc:identifier>9784000000005</dc:identifier>
+        </item>
+      </channel>
+    </rss>
+    """.strip()
+
+    def fake_get(url: str, params: dict[str, Any], timeout: float):
+        return SimpleNamespace(status_code=200, text=xml_text)
+
+    monkeypatch.setattr(ndl_client.httpx, "get", fake_get)
+    client = ndl_client.NdlClient(base_url="https://example.com/ndl")
+
+    candidate = client.lookup_by_identifier("9784000000999")
+
+    assert candidate == ndl_client.CatalogSearchCandidate(
+        title="識別子候補作品C",
+        author=None,
+        publisher=None,
+        isbn="9784000000004",
+        volume_number=4,
+        cover_url=None,
+    )
+
+
+def test_ndl_client_lookup_by_identifier_returns_none_when_no_candidate(monkeypatch):
+    """識別子検索が0件なら None を返す."""
+    xml_text = "<rss><channel></channel></rss>"
+
+    def fake_get(url: str, params: dict[str, Any], timeout: float):
+        return SimpleNamespace(status_code=200, text=xml_text)
+
+    monkeypatch.setattr(ndl_client.httpx, "get", fake_get)
+    client = ndl_client.NdlClient(base_url="https://example.com/ndl")
+
+    candidate = client.lookup_by_identifier("9784000000999")
+
+    assert candidate is None
+
+
+def test_ndl_client_lookup_by_identifier_validates_parameter():
+    """ISBN-13を含まない入力は ValueError にする."""
+    client = ndl_client.NdlClient(base_url="https://example.com/ndl")
+
+    with pytest.raises(ValueError):
+        client.lookup_by_identifier("識別子なし")
+
+
+def test_lookup_by_identifier_uses_runtime_settings(monkeypatch):
+    """公開入口が設定値の base_url を使って識別子検索を呼び出す."""
+    monkeypatch.setattr(
+        ndl_client,
+        "load_settings",
+        lambda: SimpleNamespace(ndl_api_base_url="https://example.com/runtime-ndl"),
+    )
+
+    called = {}
+
+    def fake_lookup(
+        self: ndl_client.NdlClient, isbn: str
+    ) -> ndl_client.Optional[ndl_client.CatalogSearchCandidate]:
+        called.update(
+            {
+                "base_url": self._base_url,
+                "request_policy": self._request_policy,
+                "isbn": isbn,
+            }
+        )
+        return ndl_client.CatalogSearchCandidate(
+            title="設定確認識別子作品",
+            author=None,
+            publisher=None,
+            isbn="9784000000999",
+            volume_number=None,
+            cover_url=None,
+        )
+
+    monkeypatch.setattr(ndl_client.NdlClient, "lookup_by_identifier", fake_lookup)
+
+    candidate = ndl_client.lookup_by_identifier("9784000000999")
+
+    assert called == {
+        "base_url": "https://example.com/runtime-ndl",
+        "request_policy": ndl_client.DEFAULT_REQUEST_POLICY,
+        "isbn": "9784000000999",
+    }
+    assert candidate is not None
+    assert candidate.title == "設定確認識別子作品"
