@@ -122,6 +122,41 @@ def test_create_volume_returns_conflict_when_isbn_already_exists(monkeypatch, tm
     }
 
 
+def test_create_volume_returns_conflict_when_unique_constraint_is_raised(monkeypatch, tmp_path):
+    """UNIQUE制約違反を捕捉して 409 の統一エラーを返す."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    def fetch_catalog_volume(_isbn: str) -> main.CatalogVolumeMetadata:
+        return main.CatalogVolumeMetadata(
+            title="制約作品",
+            author="制約著者",
+            publisher="制約出版社",
+            volume_number=1,
+            cover_url=None,
+        )
+
+    def always_not_found(_connection: sqlite3.Connection, _isbn: str) -> None:
+        return None
+
+    monkeypatch.setattr(main, "_fetch_catalog_volume_metadata", fetch_catalog_volume)
+    monkeypatch.setattr(main, "_get_existing_volume_series_id", always_not_found)
+
+    with TestClient(main.app) as client:
+        first = client.post("/api/volumes", json={"isbn": "9780000000004"})
+        second = client.post("/api/volumes", json={"isbn": "9780000000004"})
+
+    assert first.status_code == 201
+    assert second.status_code == 409
+    assert second.json() == {
+        "error": {
+            "code": "VOLUME_ALREADY_EXISTS",
+            "message": "Volume already exists",
+            "details": {},
+        }
+    }
+
+
 def test_create_volume_rejects_invalid_isbn(monkeypatch, tmp_path):
     """半角数字13桁にならないISBNを 400 で拒否する."""
     db_path = tmp_path / "library.db"
