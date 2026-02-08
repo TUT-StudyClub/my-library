@@ -20,7 +20,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from src.config import load_settings
 from src.db import check_database_connection, get_db_connection, initialize_database
 from src.library_queries import fetch_library_series, fetch_series_detail
-from src.ndl_client import CatalogVolumeMetadata, fetch_catalog_volume_metadata
+from src.ndl_client import CatalogVolumeMetadata, NdlClientError, fetch_catalog_volume_metadata
 
 load_dotenv()
 settings = load_settings()
@@ -190,7 +190,13 @@ def _normalize_isbn(raw_isbn: str) -> str:
 
 def _fetch_catalog_volume_metadata(isbn: str) -> CatalogVolumeMetadata:
     """ISBNでNDL Searchを検索し、登録に必要な巻メタデータを返す."""
-    return fetch_catalog_volume_metadata(isbn)
+    try:
+        return fetch_catalog_volume_metadata(isbn)
+    except NdlClientError as error:
+        raise HTTPException(
+            status_code=error.status_code,
+            detail=error.to_http_exception_detail(),
+        ) from error
 
 
 def _find_or_create_series(
