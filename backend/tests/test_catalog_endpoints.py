@@ -56,3 +56,82 @@ def test_search_catalog_returns_candidates_with_status_200(monkeypatch, tmp_path
             "cover_url": None,
         },
     ]
+
+
+def test_lookup_catalog_returns_single_candidate_with_status_200(monkeypatch, tmp_path):
+    """識別子検索APIが 200 で候補DTOを1件返す."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    called = {}
+
+    def fake_lookup_catalog_by_identifier(isbn: str) -> main.CatalogSearchCandidate:
+        called.update({"isbn": isbn})
+        return main.CatalogSearchCandidate(
+            title="識別子候補作品A",
+            author="識別子候補著者A",
+            publisher="識別子候補出版社A",
+            isbn=isbn,
+            volume_number=7,
+            cover_url="https://example.com/covers/lookup-a-7.jpg",
+        )
+
+    monkeypatch.setattr(main, "_lookup_catalog_by_identifier", fake_lookup_catalog_by_identifier)
+
+    with TestClient(main.app) as client:
+        response = client.get(
+            "/api/catalog/lookup", params={"isbn": " ９７８-０００００００００１ "}
+        )
+
+    assert response.status_code == 200
+    assert called == {"isbn": "9780000000001"}
+    assert response.json() == {
+        "title": "識別子候補作品A",
+        "author": "識別子候補著者A",
+        "publisher": "識別子候補出版社A",
+        "isbn": "9780000000001",
+        "volume_number": 7,
+        "cover_url": "https://example.com/covers/lookup-a-7.jpg",
+    }
+
+
+def test_lookup_catalog_returns_not_found_when_identifier_has_no_result(monkeypatch, tmp_path):
+    """識別子検索APIが候補0件時に404の統一エラーを返す."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    monkeypatch.setattr(main, "ndl_lookup_by_identifier", lambda isbn: None)
+
+    with TestClient(main.app) as client:
+        response = client.get("/api/catalog/lookup", params={"isbn": "9780000000999"})
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "error": {
+            "code": "CATALOG_ITEM_NOT_FOUND",
+            "message": "Catalog item not found",
+            "details": {
+                "isbn": "9780000000999",
+                "upstream": "NDL Search",
+                "externalFailure": False,
+            },
+        }
+    }
+
+
+def test_lookup_catalog_rejects_invalid_isbn(monkeypatch, tmp_path):
+    """半角数字13桁にならないISBNを 400 で拒否する."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    with TestClient(main.app) as client:
+        response = client.get("/api/catalog/lookup", params={"isbn": "978-abc"})
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "error": {
+            "code": "INVALID_ISBN",
+            "message": "isbn must be 13 digits",
+            "details": {"isbn": "978-abc"},
+        }
+    }
