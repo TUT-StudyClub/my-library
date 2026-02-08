@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { LibrarySeriesCard } from "./LibrarySeriesCard";
 import styles from "./LibraryTabPage.module.css";
@@ -115,9 +116,9 @@ export function LibraryTabPage() {
       <div className={styles.container}>
         <header className={styles.header}>
           <h1 className={styles.title}>ライブラリ</h1>
-          <button type="button" className={styles.registerButton}>
+          <Link className={styles.registerButton} href="/library/register">
             登録
-          </button>
+          </Link>
         </header>
 
         <section className={`${styles.section} ${styles.searchSection}`}>
