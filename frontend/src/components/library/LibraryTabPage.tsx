@@ -37,6 +37,7 @@ export function LibraryTabPage() {
   const [seriesList, setSeriesList] = useState<LibrarySeries[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let isCancelled = false;
@@ -81,7 +82,11 @@ export function LibraryTabPage() {
     return () => {
       isCancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
+
+  const reloadLibrary = () => {
+    setReloadKey((currentValue) => currentValue + 1);
+  };
 
   return (
     <main className={styles.page}>
@@ -110,27 +115,40 @@ export function LibraryTabPage() {
 
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>シリーズ一覧</h2>
-          {isLoading && <p className={styles.statusText}>読み込み中...</p>}
-          {!isLoading && errorMessage !== null && (
-            <p className={styles.errorText}>{errorMessage}</p>
-          )}
-          {!isLoading && errorMessage === null && seriesList.length === 0 && (
-            <p className={styles.statusText}>シリーズが登録されていません。</p>
-          )}
-          {!isLoading && errorMessage === null && seriesList.length > 0 && (
-            <div className={styles.seriesGrid}>
-              {seriesList.map((series) => (
-                <article className={styles.seriesCard} key={series.id}>
-                  <h3 className={styles.seriesTitle}>{series.title}</h3>
-                  <p className={styles.seriesMeta}>
-                    著者: {series.author ?? "未設定"}
-                    <br />
-                    出版社: {series.publisher ?? "未設定"}
-                  </p>
-                </article>
-              ))}
-            </div>
-          )}
+          <div className={styles.seriesContent}>
+            {isLoading && (
+              <div aria-live="polite" className={styles.statePanel} role="status">
+                <p className={styles.statusText}>読み込み中...</p>
+              </div>
+            )}
+            {!isLoading && errorMessage !== null && (
+              <div aria-live="polite" className={styles.statePanel} role="status">
+                <p className={styles.errorText}>{errorMessage}</p>
+                <button className={styles.retryButton} onClick={reloadLibrary} type="button">
+                  再試行
+                </button>
+              </div>
+            )}
+            {!isLoading && errorMessage === null && seriesList.length === 0 && (
+              <div aria-live="polite" className={styles.statePanel} role="status">
+                <p className={styles.statusText}>シリーズが登録されていません。</p>
+              </div>
+            )}
+            {!isLoading && errorMessage === null && seriesList.length > 0 && (
+              <div className={styles.seriesGrid}>
+                {seriesList.map((series) => (
+                  <article className={styles.seriesCard} key={series.id}>
+                    <h3 className={styles.seriesTitle}>{series.title}</h3>
+                    <p className={styles.seriesMeta}>
+                      著者: {series.author ?? "未設定"}
+                      <br />
+                      出版社: {series.publisher ?? "未設定"}
+                    </p>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
         </section>
       </div>
     </main>
