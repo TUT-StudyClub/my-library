@@ -1,9 +1,15 @@
 import logging
+import re
 import sqlite3
+import unicodedata
 from collections.abc import Mapping, Sequence
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Annotated, Any, Optional
+from xml.etree import ElementTree as ET
 
+import httpx
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request, status
@@ -137,6 +143,341 @@ class LibrarySeriesResponse(BaseModel):
     representative_cover_url: Optional[str]
 
 
+class CreateVolumeRequest(BaseModel):
+    """Volume 登録リクエスト."""
+
+    isbn: str = Field(min_length=1)
+
+
+class VolumeResponse(BaseModel):
+    """Volume レスポンス."""
+
+    isbn: str
+    volume_number: Optional[int]
+    cover_url: Optional[str]
+    registered_at: str
+
+
+class CreateVolumeResponse(BaseModel):
+    """Volume 登録レスポンス."""
+
+    series: SeriesResponse
+    volume: VolumeResponse
+
+
+@dataclass(frozen=True)
+class CatalogVolumeMetadata:
+    """NDL Search から取得した巻メタデータ."""
+
+    title: str
+    author: Optional[str]
+    publisher: Optional[str]
+    volume_number: Optional[int]
+    cover_url: Optional[str]
+
+
+NDL_XML_NAMESPACES = {
+    "dc": "http://purl.org/dc/elements/1.1/",
+    "dcndl": "http://ndl.go.jp/dcndl/terms/",
+}
+
+
+def _normalize_optional_text(value: Optional[str]) -> Optional[str]:
+    """空白のみを None に揃え、前後空白を除去する."""
+    if value is None:
+        return None
+
+    normalized_value = value.strip()
+    if normalized_value == "":
+        return None
+
+    return normalized_value
+
+
+def _normalize_isbn(raw_isbn: str) -> str:
+    """ISBN を保存用形式（半角数字13桁）へ正規化する."""
+    normalized_isbn = unicodedata.normalize("NFKC", raw_isbn).strip()
+    normalized_isbn = normalized_isbn.replace("-", "")
+
+    if re.fullmatch(r"[0-9]{13}", normalized_isbn) is None:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "INVALID_ISBN",
+                "message": "isbn must be 13 digits",
+                "details": {"isbn": raw_isbn},
+            },
+        )
+
+    return normalized_isbn
+
+
+def _extract_first_non_empty_text(
+    parent: ET.Element, path: str, namespaces: Optional[dict[str, str]] = None
+) -> Optional[str]:
+    """XMLから最初の非空文字列を取得する."""
+    for node in parent.findall(path, namespaces or {}):
+        if node.text is None:
+            continue
+
+        normalized_text = node.text.strip()
+        if normalized_text != "":
+            return normalized_text
+
+    return None
+
+
+def _extract_cover_url(item: ET.Element) -> Optional[str]:
+    """RSS item の enclosure から表紙URLを抽出する."""
+    enclosure = item.find("enclosure")
+    if enclosure is None:
+        return None
+
+    return _normalize_optional_text(enclosure.attrib.get("url"))
+
+
+def _extract_volume_number(text_value: Optional[str]) -> Optional[int]:
+    """文字列から巻数として使える先頭の整数を抽出する."""
+    if text_value is None:
+        return None
+
+    normalized_text = unicodedata.normalize("NFKC", text_value)
+    matched = re.search(r"([0-9]+)", normalized_text)
+    if matched is None:
+        return None
+
+    return int(matched.group(1))
+
+
+def _split_title_and_volume_number(title: str) -> tuple[str, Optional[int]]:
+    """タイトル末尾の巻数表現を分離する."""
+    normalized_title = _normalize_optional_text(title)
+    if normalized_title is None:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "NDL_API_BAD_GATEWAY",
+                "message": "NDL API returned invalid title",
+                "details": {"upstream": "NDL Search"},
+            },
+        )
+
+    patterns = [
+        re.compile(r"^(?P<series>.+?)[\s　]*第(?P<number>[0-9]+)巻$"),
+        re.compile(r"^(?P<series>.+?)[\s　]*(?P<number>[0-9]+)巻$"),
+        re.compile(r"^(?P<series>.+?)[\s　]+vol\.?[\s　]*(?P<number>[0-9]+)$", re.IGNORECASE),
+        re.compile(r"^(?P<series>.+?)[\s　]+(?P<number>[0-9]+)$"),
+    ]
+
+    for pattern in patterns:
+        matched = pattern.match(normalized_title)
+        if matched is None:
+            continue
+
+        series_title = _normalize_optional_text(matched.group("series"))
+        if series_title is None:
+            continue
+
+        return series_title, int(matched.group("number"))
+
+    return normalized_title, None
+
+
+def _parse_catalog_volume_metadata(xml_text: str, isbn: str) -> CatalogVolumeMetadata:
+    """NDL Search の OpenSearch XML から巻メタデータを抽出する."""
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as error:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "NDL_API_BAD_GATEWAY",
+                "message": "NDL API returned invalid XML",
+                "details": {"upstream": "NDL Search"},
+            },
+        ) from error
+
+    item = root.find("./channel/item")
+    if item is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "CATALOG_ITEM_NOT_FOUND",
+                "message": "Catalog item not found",
+                "details": {"isbn": isbn},
+            },
+        )
+
+    title_text = _extract_first_non_empty_text(item, "dc:title", NDL_XML_NAMESPACES)
+    if title_text is None:
+        title_text = _extract_first_non_empty_text(item, "title")
+
+    if title_text is None:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "NDL_API_BAD_GATEWAY",
+                "message": "NDL API returned invalid title",
+                "details": {"upstream": "NDL Search"},
+            },
+        )
+
+    series_title, volume_number_from_title = _split_title_and_volume_number(title_text)
+    volume_number = _extract_volume_number(
+        _extract_first_non_empty_text(item, "dcndl:volume", NDL_XML_NAMESPACES)
+    )
+    if volume_number is None:
+        volume_number = volume_number_from_title
+
+    author = _extract_first_non_empty_text(item, "dc:creator", NDL_XML_NAMESPACES)
+    if author is None:
+        author = _extract_first_non_empty_text(item, "author")
+
+    publisher = _extract_first_non_empty_text(item, "dc:publisher", NDL_XML_NAMESPACES)
+
+    return CatalogVolumeMetadata(
+        title=series_title,
+        author=_normalize_optional_text(author),
+        publisher=_normalize_optional_text(publisher),
+        volume_number=volume_number,
+        cover_url=_extract_cover_url(item),
+    )
+
+
+def _fetch_catalog_volume_metadata(isbn: str) -> CatalogVolumeMetadata:
+    """ISBNでNDL Searchを検索し、登録に必要な巻メタデータを返す."""
+    runtime_settings = load_settings()
+
+    try:
+        response = httpx.get(
+            runtime_settings.ndl_api_base_url,
+            params={"isbn": isbn, "cnt": 1},
+            timeout=10.0,
+        )
+    except httpx.TimeoutException as error:
+        raise HTTPException(
+            status_code=504,
+            detail={
+                "code": "NDL_API_TIMEOUT",
+                "message": "NDL API request timed out",
+                "details": {"upstream": "NDL Search", "timeoutSeconds": 10},
+            },
+        ) from error
+    except httpx.HTTPError as error:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "NDL_API_BAD_GATEWAY",
+                "message": "Failed to connect NDL API",
+                "details": {"upstream": "NDL Search"},
+            },
+        ) from error
+
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "NDL_API_BAD_GATEWAY",
+                "message": "NDL API returned non-200 status",
+                "details": {"upstream": "NDL Search", "statusCode": response.status_code},
+            },
+        )
+
+    return _parse_catalog_volume_metadata(response.text, isbn)
+
+
+def _find_or_create_series(
+    connection: sqlite3.Connection, title: str, author: Optional[str], publisher: Optional[str]
+) -> SeriesResponse:
+    """同一メタデータの Series を再利用し、無ければ新規作成する."""
+    row = connection.execute(
+        """
+        SELECT id, title, author, publisher
+        FROM series
+        WHERE title = ?
+          AND COALESCE(author, '') = COALESCE(?, '')
+          AND COALESCE(publisher, '') = COALESCE(?, '')
+        ORDER BY id ASC
+        LIMIT 1;
+        """,
+        (title, author, publisher),
+    ).fetchone()
+
+    if row is not None:
+        return SeriesResponse(id=row[0], title=row[1], author=row[2], publisher=row[3])
+
+    cursor = connection.execute(
+        """
+        INSERT INTO series (title, author, publisher)
+        VALUES (?, ?, ?);
+        """,
+        (title, author, publisher),
+    )
+    series_id = cursor.lastrowid
+    created_row = connection.execute(
+        """
+        SELECT id, title, author, publisher
+        FROM series
+        WHERE id = ?;
+        """,
+        (series_id,),
+    ).fetchone()
+
+    if created_row is None:
+        raise HTTPException(status_code=500, detail="failed to create series")
+
+    return SeriesResponse(
+        id=created_row[0],
+        title=created_row[1],
+        author=created_row[2],
+        publisher=created_row[3],
+    )
+
+
+def _get_existing_volume_series_id(
+    connection: sqlite3.Connection, normalized_isbn: str
+) -> Optional[int]:
+    """ISBN登録済みの場合の series_id を返す."""
+    row = connection.execute(
+        """
+        SELECT series_id
+        FROM volume
+        WHERE isbn = ?;
+        """,
+        (normalized_isbn,),
+    ).fetchone()
+
+    if row is None:
+        return None
+
+    return int(row[0])
+
+
+def _raise_volume_already_exists(normalized_isbn: str, series_id: int) -> None:
+    """重複ISBNの統一エラーを送出する."""
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "code": "VOLUME_ALREADY_EXISTS",
+            "message": "Volume already exists",
+            "details": {"isbn": normalized_isbn, "seriesId": series_id},
+        },
+    )
+
+
+def _to_iso8601_utc(raw_timestamp: str) -> str:
+    """SQLite日時文字列を ISO 8601 UTC 形式に変換する."""
+    try:
+        parsed = datetime.fromisoformat(raw_timestamp)
+    except ValueError:
+        return raw_timestamp
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+
+    return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 def _fetch_series_list(connection: sqlite3.Connection) -> list[SeriesResponse]:
     """DBに登録済みの Series 一覧を取得する."""
     rows = connection.execute("""
@@ -259,6 +600,74 @@ async def create_series(
         raise HTTPException(status_code=500, detail="failed to create series")
 
     return SeriesResponse(id=row[0], title=row[1], author=row[2], publisher=row[3])
+
+
+@app.post("/api/volumes", response_model=CreateVolumeResponse, status_code=status.HTTP_201_CREATED)
+async def create_volume(
+    request_body: CreateVolumeRequest,
+    connection: Annotated[sqlite3.Connection, Depends(get_db_connection)],
+):
+    """ISBN指定でSeries/Volumeを登録する."""
+    normalized_isbn = _normalize_isbn(request_body.isbn)
+
+    existing_series_id = _get_existing_volume_series_id(connection, normalized_isbn)
+    if existing_series_id is not None:
+        _raise_volume_already_exists(normalized_isbn, existing_series_id)
+
+    metadata = _fetch_catalog_volume_metadata(normalized_isbn)
+    series = _find_or_create_series(
+        connection=connection,
+        title=metadata.title,
+        author=metadata.author,
+        publisher=metadata.publisher,
+    )
+
+    try:
+        connection.execute(
+            """
+            INSERT INTO volume (isbn, series_id, volume_number, cover_url)
+            VALUES (?, ?, ?, ?);
+            """,
+            (
+                normalized_isbn,
+                series.id,
+                metadata.volume_number,
+                metadata.cover_url,
+            ),
+        )
+    except sqlite3.IntegrityError as error:
+        existing_series_id = _get_existing_volume_series_id(connection, normalized_isbn)
+        if existing_series_id is not None:
+            _raise_volume_already_exists(normalized_isbn, existing_series_id)
+
+        raise HTTPException(status_code=500, detail="failed to create volume") from error
+
+    row = connection.execute(
+        """
+        SELECT s.id, s.title, s.author, s.publisher, v.isbn, v.volume_number, v.cover_url, v.registered_at
+        FROM volume v
+        JOIN series s ON s.id = v.series_id
+        WHERE v.isbn = ?;
+        """,
+        (normalized_isbn,),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=500, detail="failed to create volume")
+
+    return CreateVolumeResponse(
+        series=SeriesResponse(
+            id=row[0],
+            title=row[1],
+            author=row[2],
+            publisher=row[3],
+        ),
+        volume=VolumeResponse(
+            isbn=row[4],
+            volume_number=row[5],
+            cover_url=row[6],
+            registered_at=_to_iso8601_utc(row[7]),
+        ),
+    )
 
 
 @app.get("/api/series", response_model=list[SeriesResponse])
