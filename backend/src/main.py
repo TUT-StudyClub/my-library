@@ -1,18 +1,110 @@
+import logging
 import sqlite3
+from collections.abc import Mapping, Sequence
 from contextlib import asynccontextmanager
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
 
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src.config import load_settings
 from src.db import check_database_connection, get_db_connection, initialize_database
 
 load_dotenv()
 settings = load_settings()
+logger = logging.getLogger(__name__)
+
+DEFAULT_ERROR_CODE_BY_STATUS = {
+    status.HTTP_400_BAD_REQUEST: "BAD_REQUEST",
+    status.HTTP_401_UNAUTHORIZED: "UNAUTHORIZED",
+    status.HTTP_403_FORBIDDEN: "FORBIDDEN",
+    status.HTTP_404_NOT_FOUND: "NOT_FOUND",
+    status.HTTP_409_CONFLICT: "CONFLICT",
+    422: "VALIDATION_ERROR",
+    status.HTTP_429_TOO_MANY_REQUESTS: "TOO_MANY_REQUESTS",
+    status.HTTP_500_INTERNAL_SERVER_ERROR: "INTERNAL_SERVER_ERROR",
+    status.HTTP_503_SERVICE_UNAVAILABLE: "SERVICE_UNAVAILABLE",
+}
+
+
+def _build_error_response(
+    status_code: int,
+    code: str,
+    message: str,
+    details: Optional[dict[str, Any]] = None,
+) -> JSONResponse:
+    """統一フォーマットのエラーレスポンスを構築する."""
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "error": {
+                "code": code,
+                "message": message,
+                "details": details or {},
+            }
+        },
+    )
+
+
+def _extract_error_code(status_code: int, detail: Any) -> str:
+    """HTTP例外detailから code を抽出し、なければHTTPステータスで補完する."""
+    if isinstance(detail, Mapping):
+        code_value = detail.get("code")
+        if isinstance(code_value, str) and code_value.strip():
+            return code_value
+
+    return DEFAULT_ERROR_CODE_BY_STATUS.get(status_code, "HTTP_ERROR")
+
+
+def _extract_error_message(detail: Any) -> str:
+    """HTTP例外detailから message を抽出し、なければ文字列化する."""
+    if isinstance(detail, Mapping):
+        message_value = detail.get("message")
+        if isinstance(message_value, str) and message_value.strip():
+            return message_value
+
+    if isinstance(detail, str):
+        stripped = detail.strip()
+        if stripped != "":
+            return stripped
+
+    return "Request failed."
+
+
+def _extract_error_details(detail: Any) -> dict[str, Any]:
+    """HTTP例外detailから details を抽出する."""
+    if isinstance(detail, Mapping):
+        detail_value = detail.get("details")
+        if isinstance(detail_value, dict):
+            return dict(detail_value)
+
+    return {}
+
+
+def _build_validation_details(errors: Sequence[Any]) -> dict[str, Any]:
+    """FastAPIのバリデーションエラーを統一フォーマット向けに変換する."""
+    field_errors = []
+    for item in errors:
+        locations = item.get("loc", [])
+        if isinstance(locations, (list, tuple)):
+            field_parts = [str(location) for location in locations if location != "body"]
+        else:
+            field_parts = [str(locations)]
+
+        field_errors.append(
+            {
+                "field": ".".join(field_parts) if field_parts else "request",
+                "reason": str(item.get("msg", "invalid")),
+            }
+        )
+
+    return {"fieldErrors": field_errors}
 
 
 class CreateSeriesRequest(BaseModel):
@@ -66,6 +158,44 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def handle_http_exception(
+    _request: Request, exception: StarletteHTTPException
+) -> JSONResponse:
+    """HTTPExceptionを統一フォーマットへ変換する."""
+    return _build_error_response(
+        status_code=exception.status_code,
+        code=_extract_error_code(exception.status_code, exception.detail),
+        message=_extract_error_message(exception.detail),
+        details=_extract_error_details(exception.detail),
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def handle_validation_exception(
+    _request: Request, exception: RequestValidationError
+) -> JSONResponse:
+    """リクエストバリデーション例外を統一フォーマットへ変換する."""
+    return _build_error_response(
+        status_code=422,
+        code="VALIDATION_ERROR",
+        message="リクエストパラメータが不正です。",
+        details=_build_validation_details(exception.errors()),
+    )
+
+
+@app.exception_handler(Exception)
+async def handle_unexpected_exception(_request: Request, _exception: Exception) -> JSONResponse:
+    """想定外例外を統一フォーマットへ変換する."""
+    logger.exception("想定外の例外が発生しました。")
+    return _build_error_response(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        code="INTERNAL_SERVER_ERROR",
+        message="想定外のエラーが発生しました。",
+        details={},
+    )
 
 
 @app.get("/")
