@@ -42,6 +42,7 @@ export function LibraryTabPage() {
   const [reloadKey, setReloadKey] = useState(0);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [debouncedSearchKeyword, setDebouncedSearchKeyword] = useState("");
+  const normalizedSearchKeyword = debouncedSearchKeyword.trim();
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -62,7 +63,9 @@ export function LibraryTabPage() {
 
       try {
         const requestUrl = new URL("/api/library", API_BASE_URL);
-        requestUrl.searchParams.set("q", debouncedSearchKeyword);
+        if (normalizedSearchKeyword !== "") {
+          requestUrl.searchParams.set("q", normalizedSearchKeyword);
+        }
 
         const response = await fetch(requestUrl.toString(), { signal: abortController.signal });
         if (!response.ok) {
@@ -101,7 +104,7 @@ export function LibraryTabPage() {
     return () => {
       abortController.abort();
     };
-  }, [debouncedSearchKeyword, reloadKey]);
+  }, [normalizedSearchKeyword, reloadKey]);
 
   const reloadLibrary = () => {
     setReloadKey((currentValue) => currentValue + 1);
@@ -158,7 +161,7 @@ export function LibraryTabPage() {
             {!isLoading && errorMessage === null && seriesList.length === 0 && (
               <div aria-live="polite" className={styles.statePanel} role="status">
                 <p className={styles.statusText}>
-                  {debouncedSearchKeyword.trim() === ""
+                  {normalizedSearchKeyword === ""
                     ? "シリーズが登録されていません。"
                     : "検索条件に一致するシリーズがありません。"}
                 </p>
