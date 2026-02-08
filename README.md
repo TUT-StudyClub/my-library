@@ -77,6 +77,8 @@ npm run dev
 フロント/バックを一括で実行できます。
 
 ```bash
+make check
+make check-all
 make lint
 make format
 make format-check
@@ -85,6 +87,9 @@ make test
 make db-smoke
 make backend-run
 ```
+
+`make check` は変更ファイルから対象を判定して実行します（例: `docs/` や `README.md` のみ変更時はスキップ）。  
+常にフルチェックしたい場合は `make check-all` を使ってください。
 
 `make db-smoke` は backend 側で Series/Volume を1件ずつ登録し、直後に取得できることを確認します。  
 結果は `backend/data/register_fetch_result.json` に保存されます。
