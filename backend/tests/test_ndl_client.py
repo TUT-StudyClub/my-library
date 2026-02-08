@@ -31,7 +31,8 @@ def test_ndl_client_fetches_volume_metadata_from_ndl_api(monkeypatch):
 
     monkeypatch.setattr(ndl_client.httpx, "get", fake_get)
 
-    client = ndl_client.NdlClient(base_url="https://example.com/ndl", timeout_seconds=8.0)
+    request_policy = ndl_client.NdlRequestPolicy(timeout_seconds=8.0, max_retries=0)
+    client = ndl_client.NdlClient(base_url="https://example.com/ndl", request_policy=request_policy)
     metadata = client.fetch_catalog_volume_metadata("9780000000123")
 
     assert called == {
@@ -49,22 +50,89 @@ def test_ndl_client_fetches_volume_metadata_from_ndl_api(monkeypatch):
 
 
 def test_ndl_client_returns_timeout_http_exception(monkeypatch):
-    """NDL APIタイムアウト時に 504 の統一エラーを返す."""
+    """NDL APIタイムアウト時に方針回数まで再試行し、504を返す."""
+    called_count = 0
 
     def fake_get(url: str, params: dict[str, Any], timeout: float):
+        nonlocal called_count
+        called_count += 1
         raise httpx.TimeoutException("timeout")
 
     monkeypatch.setattr(ndl_client.httpx, "get", fake_get)
-    client = ndl_client.NdlClient(base_url="https://example.com/ndl", timeout_seconds=10.0)
+    request_policy = ndl_client.NdlRequestPolicy(timeout_seconds=10.0, max_retries=2)
+    client = ndl_client.NdlClient(base_url="https://example.com/ndl", request_policy=request_policy)
 
     with pytest.raises(HTTPException) as error_info:
         client.fetch_catalog_volume_metadata("9780000000123")
 
+    assert called_count == 3
     assert error_info.value.status_code == 504
     assert error_info.value.detail == {
         "code": "NDL_API_TIMEOUT",
         "message": "NDL API request timed out",
         "details": {"upstream": "NDL Search", "timeoutSeconds": 10},
+    }
+
+
+def test_ndl_client_retries_retryable_status_and_succeeds(monkeypatch):
+    """再試行対象ステータスは方針回数内でリトライして成功できる."""
+    called_count = 0
+    xml_text = """
+    <rss xmlns:dc="http://purl.org/dc/elements/1.1/">
+      <channel>
+        <item>
+          <dc:title>リトライ作品 第1巻</dc:title>
+        </item>
+      </channel>
+    </rss>
+    """.strip()
+
+    def fake_get(url: str, params: dict[str, Any], timeout: float):
+        nonlocal called_count
+        called_count += 1
+        if called_count == 1:
+            return SimpleNamespace(status_code=503, text="")
+
+        return SimpleNamespace(status_code=200, text=xml_text)
+
+    monkeypatch.setattr(ndl_client.httpx, "get", fake_get)
+    request_policy = ndl_client.NdlRequestPolicy(timeout_seconds=10.0, max_retries=1)
+    client = ndl_client.NdlClient(base_url="https://example.com/ndl", request_policy=request_policy)
+
+    metadata = client.fetch_catalog_volume_metadata("9780000000123")
+
+    assert called_count == 2
+    assert metadata == ndl_client.CatalogVolumeMetadata(
+        title="リトライ作品",
+        author=None,
+        publisher=None,
+        volume_number=1,
+        cover_url=None,
+    )
+
+
+def test_ndl_client_does_not_retry_non_retryable_status(monkeypatch):
+    """再試行対象外ステータスは1回で失敗とする."""
+    called_count = 0
+
+    def fake_get(url: str, params: dict[str, Any], timeout: float):
+        nonlocal called_count
+        called_count += 1
+        return SimpleNamespace(status_code=400, text="")
+
+    monkeypatch.setattr(ndl_client.httpx, "get", fake_get)
+    request_policy = ndl_client.NdlRequestPolicy(timeout_seconds=10.0, max_retries=3)
+    client = ndl_client.NdlClient(base_url="https://example.com/ndl", request_policy=request_policy)
+
+    with pytest.raises(HTTPException) as error_info:
+        client.fetch_catalog_volume_metadata("9780000000123")
+
+    assert called_count == 1
+    assert error_info.value.status_code == 502
+    assert error_info.value.detail == {
+        "code": "NDL_API_BAD_GATEWAY",
+        "message": "NDL API returned non-200 status",
+        "details": {"upstream": "NDL Search", "statusCode": 400},
     }
 
 
@@ -82,7 +150,7 @@ def test_fetch_catalog_volume_metadata_uses_runtime_settings(monkeypatch):
         called.update(
             {
                 "base_url": self._base_url,
-                "timeout_seconds": self._timeout_seconds,
+                "request_policy": self._request_policy,
                 "isbn": isbn,
             }
         )
@@ -100,7 +168,7 @@ def test_fetch_catalog_volume_metadata_uses_runtime_settings(monkeypatch):
 
     assert called == {
         "base_url": "https://example.com/runtime-ndl",
-        "timeout_seconds": ndl_client.DEFAULT_REQUEST_TIMEOUT_SECONDS,
+        "request_policy": ndl_client.DEFAULT_REQUEST_POLICY,
         "isbn": "9780000000123",
     }
     assert metadata.title == "設定確認作品"
