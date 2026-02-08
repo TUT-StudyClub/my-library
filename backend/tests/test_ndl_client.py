@@ -3,7 +3,6 @@ from typing import Any
 
 import httpx
 import pytest
-from fastapi import HTTPException
 
 from src import ndl_client
 
@@ -49,7 +48,7 @@ def test_ndl_client_fetches_volume_metadata_from_ndl_api(monkeypatch):
     )
 
 
-def test_ndl_client_returns_timeout_http_exception(monkeypatch):
+def test_ndl_client_returns_timeout_client_error(monkeypatch):
     """NDL APIタイムアウト時に方針回数まで再試行し、504を返す."""
     called_count = 0
 
@@ -62,15 +61,21 @@ def test_ndl_client_returns_timeout_http_exception(monkeypatch):
     request_policy = ndl_client.NdlRequestPolicy(timeout_seconds=10.0, max_retries=2)
     client = ndl_client.NdlClient(base_url="https://example.com/ndl", request_policy=request_policy)
 
-    with pytest.raises(HTTPException) as error_info:
+    with pytest.raises(ndl_client.NdlClientError) as error_info:
         client.fetch_catalog_volume_metadata("9780000000123")
 
     assert called_count == 3
     assert error_info.value.status_code == 504
-    assert error_info.value.detail == {
+    assert error_info.value.to_http_exception_detail() == {
         "code": "NDL_API_TIMEOUT",
         "message": "NDL API request timed out",
-        "details": {"upstream": "NDL Search", "timeoutSeconds": 10},
+        "details": {
+            "upstream": "NDL Search",
+            "externalFailure": True,
+            "failureType": "timeout",
+            "retryable": True,
+            "timeoutSeconds": 10,
+        },
     }
 
 
@@ -111,6 +116,33 @@ def test_ndl_client_retries_retryable_status_and_succeeds(monkeypatch):
     )
 
 
+def test_ndl_client_converts_communication_error_to_external_failure(monkeypatch):
+    """通信失敗を外部失敗の統一エラー情報へ変換する."""
+    request = httpx.Request("GET", "https://example.com/ndl")
+
+    def fake_get(url: str, params: dict[str, Any], timeout: float):
+        raise httpx.ConnectError("connect failed", request=request)
+
+    monkeypatch.setattr(ndl_client.httpx, "get", fake_get)
+    request_policy = ndl_client.NdlRequestPolicy(timeout_seconds=10.0, max_retries=0)
+    client = ndl_client.NdlClient(base_url="https://example.com/ndl", request_policy=request_policy)
+
+    with pytest.raises(ndl_client.NdlClientError) as error_info:
+        client.fetch_catalog_volume_metadata("9780000000123")
+
+    assert error_info.value.status_code == 502
+    assert error_info.value.to_http_exception_detail() == {
+        "code": "NDL_API_BAD_GATEWAY",
+        "message": "Failed to connect NDL API",
+        "details": {
+            "upstream": "NDL Search",
+            "externalFailure": True,
+            "failureType": "communication",
+            "retryable": True,
+        },
+    }
+
+
 def test_ndl_client_does_not_retry_non_retryable_status(monkeypatch):
     """再試行対象外ステータスは1回で失敗とする."""
     called_count = 0
@@ -124,15 +156,46 @@ def test_ndl_client_does_not_retry_non_retryable_status(monkeypatch):
     request_policy = ndl_client.NdlRequestPolicy(timeout_seconds=10.0, max_retries=3)
     client = ndl_client.NdlClient(base_url="https://example.com/ndl", request_policy=request_policy)
 
-    with pytest.raises(HTTPException) as error_info:
+    with pytest.raises(ndl_client.NdlClientError) as error_info:
         client.fetch_catalog_volume_metadata("9780000000123")
 
     assert called_count == 1
     assert error_info.value.status_code == 502
-    assert error_info.value.detail == {
+    assert error_info.value.to_http_exception_detail() == {
         "code": "NDL_API_BAD_GATEWAY",
         "message": "NDL API returned non-200 status",
-        "details": {"upstream": "NDL Search", "statusCode": 400},
+        "details": {
+            "upstream": "NDL Search",
+            "externalFailure": True,
+            "failureType": "invalidResponse",
+            "retryable": False,
+            "statusCode": 400,
+        },
+    }
+
+
+def test_ndl_client_converts_invalid_xml_to_external_failure(monkeypatch):
+    """XML不正レスポンスを外部失敗の統一エラー情報へ変換する."""
+
+    def fake_get(url: str, params: dict[str, Any], timeout: float):
+        return SimpleNamespace(status_code=200, text="<rss><channel><item></channel></rss>")
+
+    monkeypatch.setattr(ndl_client.httpx, "get", fake_get)
+    client = ndl_client.NdlClient(base_url="https://example.com/ndl")
+
+    with pytest.raises(ndl_client.NdlClientError) as error_info:
+        client.fetch_catalog_volume_metadata("9780000000123")
+
+    assert error_info.value.status_code == 502
+    assert error_info.value.to_http_exception_detail() == {
+        "code": "NDL_API_BAD_GATEWAY",
+        "message": "NDL API returned invalid XML",
+        "details": {
+            "upstream": "NDL Search",
+            "externalFailure": True,
+            "failureType": "invalidResponse",
+            "retryable": False,
+        },
     }
 
 
