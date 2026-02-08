@@ -14,6 +14,7 @@ const ISBN_EXTRACTION_ERROR_MESSAGE =
 const INVALID_ISBN_MESSAGE = "ISBNは正規化後に13桁の数字である必要があります。";
 const DEFAULT_REGISTER_ERROR_MESSAGE = "登録に失敗しました。";
 const REGISTER_REQUEST_ERROR_MESSAGE = "登録リクエストの送信に失敗しました。";
+const REGISTER_SUCCESS_MESSAGE = "登録完了";
 const IGNORABLE_SCAN_ERROR_NAMES = new Set([
   "NotFoundException",
   "ChecksumException",
@@ -58,6 +59,25 @@ function extractRegisterErrorMessage(errorPayload: unknown, statusCode: number):
   }
 
   return `${DEFAULT_REGISTER_ERROR_MESSAGE} (status: ${statusCode})`;
+}
+
+function extractRegisteredIsbn(payload: unknown): string | null {
+  if (
+    typeof payload === "object" &&
+    payload !== null &&
+    "volume" in payload &&
+    typeof payload.volume === "object" &&
+    payload.volume !== null &&
+    "isbn" in payload.volume &&
+    typeof payload.volume.isbn === "string"
+  ) {
+    const normalizedIsbn = payload.volume.isbn.trim();
+    if (normalizedIsbn !== "") {
+      return normalizedIsbn;
+    }
+  }
+
+  return null;
 }
 
 function extractNormalizedIsbn(scanText: string): string | null {
@@ -218,8 +238,10 @@ export default function RegisterPage() {
         return;
       }
 
+      const successPayload = (await response.json().catch(() => null)) as unknown;
+      const registeredIsbn = extractRegisteredIsbn(successPayload) ?? confirmedIsbn;
       setRegisterRequestStatus("success");
-      setRegisterRequestMessage("登録リクエストを送信しました。");
+      setRegisterRequestMessage(`${REGISTER_SUCCESS_MESSAGE}（ISBN: ${registeredIsbn}）`);
     } catch {
       setRegisterRequestStatus("failure");
       setRegisterRequestMessage(REGISTER_REQUEST_ERROR_MESSAGE);
