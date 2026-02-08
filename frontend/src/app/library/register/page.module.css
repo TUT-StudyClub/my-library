@@ -45,21 +45,120 @@
   margin: 0;
 }
 
-.placeholderPanel {
+.scannerPanel {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.sectionTitle {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+
+.sectionDescription {
+  color: #475569;
+  font-size: 0.9rem;
+  margin: 0 0 16px;
+}
+
+.previewFrame {
   align-items: center;
   background: #ffffff;
   border: 1px dashed #cbd5e1;
   border-radius: 16px;
   display: flex;
+  flex-direction: column;
+  gap: 10px;
   justify-content: center;
-  min-height: 180px;
+  min-height: 220px;
   padding: 20px;
   text-align: center;
 }
 
-.placeholderText {
+.cameraPreview {
+  background: #0f172a;
+  border-radius: 12px;
+  max-height: 360px;
+  width: 100%;
+}
+
+.previewHint {
   color: #334155;
-  font-size: 0.95rem;
-  line-height: 1.6;
+  font-size: 0.85rem;
   margin: 0;
+}
+
+.actionRow {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.primaryButton,
+.secondaryButton {
+  appearance: none;
+  border: none;
+  border-radius: 9999px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 9px 16px;
+}
+
+.primaryButton {
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+.secondaryButton {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.errorText {
+  color: #b91c1c;
+  font-size: 0.9rem;
+  margin: 12px 0 0;
+}
+
+.resultPanel {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  margin-top: 14px;
+  padding: 12px;
+}
+
+.resultLabel {
+  color: #475569;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+
+.resultValue {
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0;
+  word-break: break-all;
+}
+
+@media (max-width: 640px) {
+  .cameraPreview {
+    max-height: 280px;
+  }
+
+  .actionRow {
+    flex-direction: column;
+  }
 }
