@@ -179,17 +179,6 @@ class CreateVolumeResponse(BaseModel):
     volume: VolumeResponse
 
 
-class CatalogSearchCandidateResponse(BaseModel):
-    """カタログ検索候補レスポンス."""
-
-    title: str
-    author: Optional[str]
-    publisher: Optional[str]
-    isbn: Optional[str]
-    volume_number: Optional[int]
-    cover_url: Optional[str]
-
-
 def _normalize_isbn(raw_isbn: str) -> str:
     """ISBN を保存用形式（半角数字13桁）へ正規化する."""
     normalized_isbn = unicodedata.normalize("NFKC", raw_isbn).strip()
@@ -726,7 +715,7 @@ async def list_library(
     ]
 
 
-@app.get("/api/catalog/search", response_model=list[CatalogSearchCandidateResponse])
+@app.get("/api/catalog/search", response_model=list[CatalogSearchCandidate])
 async def search_catalog(
     q: str,
     limit: Annotated[int, Query(ge=1, le=100)] = 10,
@@ -735,34 +724,17 @@ async def search_catalog(
     candidates: list[CatalogSearchCandidate] = await run_in_threadpool(
         _search_catalog_by_keyword, q, limit
     )
-    return [
-        CatalogSearchCandidateResponse(
-            title=candidate.title,
-            author=candidate.author,
-            publisher=candidate.publisher,
-            isbn=candidate.isbn,
-            volume_number=candidate.volume_number,
-            cover_url=candidate.cover_url,
-        )
-        for candidate in candidates
-    ]
+    return candidates
 
 
-@app.get("/api/catalog/lookup", response_model=CatalogSearchCandidateResponse)
+@app.get("/api/catalog/lookup", response_model=CatalogSearchCandidate)
 async def lookup_catalog(isbn: str):
     """外部カタログを識別子検索し、最良候補1件を返す."""
     normalized_isbn = _normalize_isbn(isbn)
     candidate: CatalogSearchCandidate = await run_in_threadpool(
         _lookup_catalog_by_identifier, normalized_isbn
     )
-    return CatalogSearchCandidateResponse(
-        title=candidate.title,
-        author=candidate.author,
-        publisher=candidate.publisher,
-        isbn=candidate.isbn,
-        volume_number=candidate.volume_number,
-        cover_url=candidate.cover_url,
-    )
+    return candidate
 
 
 @app.get("/api/series/{series_id}", response_model=SeriesDetailResponse)
