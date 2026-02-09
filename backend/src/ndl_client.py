@@ -1,6 +1,6 @@
 import re
 import unicodedata
-from typing import Any, Optional
+from typing import Any, Literal, Optional, Union
 from xml.etree import ElementTree as ET
 
 import httpx
@@ -13,6 +13,7 @@ NDL_XML_NAMESPACES = {
     "dcndl": "http://ndl.go.jp/dcndl/terms/",
 }
 UPSTREAM_NAME = "NDL Search"
+OwnedStatus = Union[bool, Literal["unknown"]]
 
 
 class NdlRequestPolicy(BaseModel):
@@ -81,6 +82,9 @@ class CatalogSearchCandidate(BaseModel):
     cover_url: Optional[str] = Field(
         default=None,
         description="表紙URL。書影情報が無い場合はnull（画像バイナリは返さない）。",
+    )
+    owned: OwnedStatus = Field(
+        description="所持判定。DB照合で true/false、ISBN欠損など判定不能時はunknown。",
     )
 
 
@@ -600,6 +604,7 @@ def _parse_catalog_search_candidates(xml_text: str) -> list[CatalogSearchCandida
                 isbn=_extract_isbn(item),
                 volume_number=volume_number,
                 cover_url=_extract_cover_url(item),
+                owned="unknown",
             )
         )
 
