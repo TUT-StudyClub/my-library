@@ -239,3 +239,36 @@ def test_lookup_catalog_rejects_invalid_isbn(monkeypatch, tmp_path):
             "details": {"isbn": "978-abc"},
         }
     }
+
+
+def test_catalog_search_candidate_schema_documents_field_meanings():
+    """CatalogSearchCandidateスキーマに意味と欠損時の説明がある."""
+    openapi_schema = main.app.openapi()
+    candidate_schema = openapi_schema["components"]["schemas"]["CatalogSearchCandidate"]
+
+    assert set(candidate_schema["required"]) == {"title"}
+
+    properties = candidate_schema["properties"]
+    assert properties["title"]["description"] == "候補タイトル（シリーズ名）。必須で返す。"
+    assert properties["author"]["description"] == "著者名。取得できない場合はnull。"
+    assert properties["publisher"]["description"] == "出版社名。取得できない場合はnull。"
+    assert properties["isbn"]["description"] == "ISBN-13（半角数字13桁）。抽出できない場合はnull。"
+    assert properties["volume_number"]["description"] == "巻数。抽出できない場合はnull。"
+    assert (
+        properties["cover_url"]["description"]
+        == "表紙URL。書影情報が無い場合はnull（画像バイナリは返さない）。"
+    )
+
+
+def test_catalog_search_and_lookup_use_the_same_candidate_dto_schema():
+    """search/lookupが同一のCatalogSearchCandidate DTOスキーマを参照する."""
+    openapi_schema = main.app.openapi()
+    search_response_schema = openapi_schema["paths"]["/api/catalog/search"]["get"]["responses"][
+        "200"
+    ]["content"]["application/json"]["schema"]
+    lookup_response_schema = openapi_schema["paths"]["/api/catalog/lookup"]["get"]["responses"][
+        "200"
+    ]["content"]["application/json"]["schema"]
+
+    assert search_response_schema["items"]["$ref"] == "#/components/schemas/CatalogSearchCandidate"
+    assert lookup_response_schema["$ref"] == "#/components/schemas/CatalogSearchCandidate"
