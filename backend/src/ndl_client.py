@@ -1,10 +1,10 @@
 import re
 import unicodedata
-from dataclasses import dataclass
 from typing import Any, Optional
 from xml.etree import ElementTree as ET
 
 import httpx
+from pydantic import BaseModel, ConfigDict
 
 from src.config import load_settings
 
@@ -15,9 +15,10 @@ NDL_XML_NAMESPACES = {
 UPSTREAM_NAME = "NDL Search"
 
 
-@dataclass(frozen=True)
-class NdlRequestPolicy:
+class NdlRequestPolicy(BaseModel):
     """NDL API 呼び出し時のタイムアウト・リトライ方針."""
+
+    model_config = ConfigDict(frozen=True)
 
     timeout_seconds: float = 10.0
     max_retries: int = 1
@@ -27,27 +28,29 @@ class NdlRequestPolicy:
 DEFAULT_REQUEST_POLICY = NdlRequestPolicy()
 
 
-@dataclass(frozen=True)
-class CatalogVolumeMetadata:
+class CatalogVolumeMetadata(BaseModel):
     """NDL Search から取得した巻メタデータ."""
 
+    model_config = ConfigDict(frozen=True)
+
     title: str
-    author: Optional[str]
-    publisher: Optional[str]
-    volume_number: Optional[int]
-    cover_url: Optional[str]
+    author: Optional[str] = None
+    publisher: Optional[str] = None
+    volume_number: Optional[int] = None
+    cover_url: Optional[str] = None
 
 
-@dataclass(frozen=True)
-class CatalogSearchCandidate:
+class CatalogSearchCandidate(BaseModel):
     """NDL Search のキーワード検索候補."""
 
+    model_config = ConfigDict(frozen=True)
+
     title: str
-    author: Optional[str]
-    publisher: Optional[str]
-    isbn: Optional[str]
-    volume_number: Optional[int]
-    cover_url: Optional[str]
+    author: Optional[str] = None
+    publisher: Optional[str] = None
+    isbn: Optional[str] = None
+    volume_number: Optional[int] = None
+    cover_url: Optional[str] = None
 
 
 class NdlClientError(Exception):
