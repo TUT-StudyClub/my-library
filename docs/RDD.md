@@ -736,6 +736,71 @@
 }
 ```
 
+#### **8.2.2 GET /api/catalog/lookup（識別子検索）**
+
+識別子（ISBN）で NDL Search を検索し、最良候補1件を取得するエンドポイント。
+
+**HTTPメソッド/パス**
+
+* `GET /api/catalog/lookup`
+
+**クエリパラメータ**
+
+| パラメータ | 型 | 必須 | 説明 |
+|---|---|---|---|
+| `isbn` | string | 必須 | 検索対象のISBN。入力時は前後空白/全角数字/ハイフンを許容し、サーバー側で正規化する |
+
+`isbn` は `docs/DEVELOPMENT_RULES.md` の「識別子（ISBN）正規化ルール」に従って正規化し、正規化後が半角数字13桁でない場合は `400`（`INVALID_ISBN`）とする。
+
+**レスポンス（200 OK）**
+
+検索結果の最良候補を1件返す。レスポンスDTOは `GET /api/catalog/search` と同一の `CatalogSearchCandidate` を使う。
+
+**レスポンス例（200 OK）**
+
+```json
+{
+  "title": "葬送のフリーレン",
+  "author": "山田鐘人",
+  "publisher": "小学館",
+  "isbn": "9784098515762",
+  "volume_number": 1,
+  "cover_url": "https://example.com/covers/frieren-1.jpg"
+}
+```
+
+**エラー例（404 Not Found）**
+
+```json
+{
+  "error": {
+    "code": "CATALOG_ITEM_NOT_FOUND",
+    "message": "Catalog item not found",
+    "details": {
+      "isbn": "9784098515762",
+      "upstream": "NDL Search",
+      "externalFailure": false
+    }
+  }
+}
+```
+
+#### **8.2.3 CatalogSearchCandidate DTO（共通）**
+
+`/api/catalog/search` と `/api/catalog/lookup` は、同じ `CatalogSearchCandidate` DTO で返す。  
+欠損可能な項目もキーは省略せず、必ず `null` で返す。
+
+| フィールド | 型 | 必須 | 欠損時の扱い | UI/判定ロジックの扱い |
+|---|---|---|---|---|
+| `title` | string | 必須 | 欠損は許容しない | 候補表示の主キーとして扱う |
+| `author` | string | 任意 | 取得できない場合は `null` | `null` は「著者不明」として表示可 |
+| `publisher` | string | 任意 | 取得できない場合は `null` | `null` は「出版社不明」として表示可 |
+| `isbn` | string | 任意 | 抽出できない場合は `null` | `null` は所持判定不可として扱う（ISBN前提の登録処理は無効化） |
+| `volume_number` | number | 任意 | 抽出できない場合は `null` | `null` は不明巻として扱う（例: `?巻`） |
+| `cover_url` | string | 任意 | 書影情報が無い場合は `null` | `null` はプレースホルダ画像を表示 |
+
+`cover_url` は参照先URLを返すための値であり、画像バイナリはAPIレスポンスに含めない。
+
 ### **エラー形式（統一）**
 
 * エラー応答の正式仕様は `docs/DEVELOPMENT_RULES.md` の「APIエラーレスポンス規約」に従う  
