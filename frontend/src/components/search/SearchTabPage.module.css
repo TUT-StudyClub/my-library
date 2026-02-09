@@ -141,10 +141,64 @@
   text-align: center;
 }
 
+.statePanelIdle {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.statePanelLoading {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.statePanelEmpty {
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
+.statePanelError {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.statePanelList {
+  align-items: stretch;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.stateContent {
+  max-width: 560px;
+}
+
+.stateTitle {
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0 0 6px;
+}
+
+.stateDescription {
+  color: #334155;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.stateDescriptionError {
+  color: #991b1b;
+}
+
 .statusText {
   color: #334155;
   font-size: 0.95rem;
   margin: 0;
+}
+
+.resultSummary {
+  color: #475569;
+  font-size: 0.85rem;
+  margin: 0 0 10px;
 }
 
 .resultList {
@@ -176,6 +230,19 @@
   font-size: 0.85rem;
   line-height: 1.45;
   margin: 0;
+}
+
+.retryButton {
+  appearance: none;
+  background: #0f172a;
+  border: none;
+  border-radius: 9999px;
+  color: #f8fafc;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-top: 12px;
+  padding: 8px 14px;
 }
 
 @media (max-width: 640px) {
