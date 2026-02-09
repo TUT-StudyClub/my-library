@@ -5,8 +5,9 @@ import unicodedata
 from collections.abc import Mapping, Sequence
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, NoReturn, Optional
 
+import httpx
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
@@ -197,15 +198,52 @@ def _normalize_isbn(raw_isbn: str) -> str:
     return normalized_isbn
 
 
-def _fetch_catalog_volume_metadata(isbn: str) -> CatalogVolumeMetadata:
-    """ISBNでNDL Searchを検索し、登録に必要な巻メタデータを返す."""
-    try:
-        return fetch_catalog_volume_metadata(isbn)
-    except NdlClientError as error:
+def _raise_ndl_http_exception(error: Exception) -> NoReturn:
+    """NDL連携失敗をHTTPExceptionへ正規化して送出する."""
+    if isinstance(error, NdlClientError):
         raise HTTPException(
             status_code=error.status_code,
             detail=error.to_http_exception_detail(),
         ) from error
+
+    if isinstance(error, (httpx.TimeoutException, TimeoutError)):
+        logger.exception("NDL Search 呼び出しで予期しないタイムアウト例外が発生しました。")
+        raise HTTPException(
+            status_code=504,
+            detail={
+                "code": "NDL_API_TIMEOUT",
+                "message": "NDL API request timed out",
+                "details": {
+                    "upstream": "NDL Search",
+                    "externalFailure": True,
+                    "failureType": "timeout",
+                    "retryable": True,
+                },
+            },
+        ) from error
+
+    logger.exception("NDL Search 呼び出しで予期しない例外が発生しました。")
+    raise HTTPException(
+        status_code=502,
+        detail={
+            "code": "NDL_API_BAD_GATEWAY",
+            "message": "Failed to connect NDL API",
+            "details": {
+                "upstream": "NDL Search",
+                "externalFailure": True,
+                "failureType": "communication",
+                "retryable": False,
+            },
+        },
+    ) from error
+
+
+def _fetch_catalog_volume_metadata(isbn: str) -> CatalogVolumeMetadata:
+    """ISBNでNDL Searchを検索し、登録に必要な巻メタデータを返す."""
+    try:
+        return fetch_catalog_volume_metadata(isbn)
+    except Exception as error:
+        _raise_ndl_http_exception(error)
 
 
 def _search_catalog_by_keyword(q: str, limit: int) -> list[CatalogSearchCandidate]:
@@ -221,11 +259,8 @@ def _search_catalog_by_keyword(q: str, limit: int) -> list[CatalogSearchCandidat
                 "details": {"reason": str(error)},
             },
         ) from error
-    except NdlClientError as error:
-        raise HTTPException(
-            status_code=error.status_code,
-            detail=error.to_http_exception_detail(),
-        ) from error
+    except Exception as error:
+        _raise_ndl_http_exception(error)
 
 
 def _lookup_catalog_by_identifier(isbn: str) -> CatalogSearchCandidate:
@@ -241,11 +276,8 @@ def _lookup_catalog_by_identifier(isbn: str) -> CatalogSearchCandidate:
                 "details": {"isbn": isbn, "reason": str(error)},
             },
         ) from error
-    except NdlClientError as error:
-        raise HTTPException(
-            status_code=error.status_code,
-            detail=error.to_http_exception_detail(),
-        ) from error
+    except Exception as error:
+        _raise_ndl_http_exception(error)
 
     if candidate is None:
         raise HTTPException(
