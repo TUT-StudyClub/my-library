@@ -215,6 +215,64 @@ def test_create_volume_returns_external_failure_details_when_ndl_timeout(monkeyp
     }
 
 
+def test_create_volume_converts_unexpected_external_exception_to_bad_gateway(monkeypatch, tmp_path):
+    """巻登録で想定外の外部例外が発生しても 502 の統一エラーを返す."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    def raise_unexpected_error(*_args, **_kwargs):
+        raise RuntimeError("unexpected external failure")
+
+    monkeypatch.setattr(main, "fetch_catalog_volume_metadata", raise_unexpected_error)
+
+    with TestClient(main.app) as client:
+        response = client.post("/api/volumes", json={"isbn": "9780000000005"})
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "error": {
+            "code": "NDL_API_BAD_GATEWAY",
+            "message": "Failed to connect NDL API",
+            "details": {
+                "upstream": "NDL Search",
+                "externalFailure": True,
+                "failureType": "communication",
+                "retryable": False,
+            },
+        }
+    }
+
+
+def test_create_volume_converts_unexpected_timeout_exception_to_gateway_timeout(
+    monkeypatch, tmp_path
+):
+    """巻登録で予期しないタイムアウト例外が発生しても 504 の統一エラーを返す."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    def raise_unexpected_timeout(*_args, **_kwargs):
+        raise TimeoutError("timeout")
+
+    monkeypatch.setattr(main, "fetch_catalog_volume_metadata", raise_unexpected_timeout)
+
+    with TestClient(main.app) as client:
+        response = client.post("/api/volumes", json={"isbn": "9780000000005"})
+
+    assert response.status_code == 504
+    assert response.json() == {
+        "error": {
+            "code": "NDL_API_TIMEOUT",
+            "message": "NDL API request timed out",
+            "details": {
+                "upstream": "NDL Search",
+                "externalFailure": True,
+                "failureType": "timeout",
+                "retryable": True,
+            },
+        }
+    }
+
+
 def test_delete_volume_removes_volume_and_is_not_returned_on_get(monkeypatch, tmp_path):
     """Volume削除後、作品詳細取得で対象ISBNが返らない."""
     db_path = tmp_path / "library.db"
