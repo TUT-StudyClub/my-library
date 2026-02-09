@@ -1,0 +1,152 @@
+.page {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  color: #0f172a;
+  padding: 24px 16px 40px;
+}
+
+.container {
+  margin: 0 auto;
+  max-width: 1080px;
+}
+
+.header {
+  margin-bottom: 20px;
+}
+
+.title {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.tabs {
+  background: #e2e8f0;
+  border-radius: 9999px;
+  display: inline-flex;
+  gap: 6px;
+  margin-bottom: 24px;
+  padding: 4px;
+}
+
+.tab {
+  align-items: center;
+  border-radius: 9999px;
+  color: inherit;
+  display: inline-flex;
+  font-size: 0.9rem;
+  font-weight: 600;
+  justify-content: center;
+  padding: 8px 14px;
+  text-decoration: none;
+}
+
+.tabActive {
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+.tabInactive {
+  color: #475569;
+}
+
+.tabInactive:hover {
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.section {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  margin-bottom: 16px;
+  padding: 20px;
+}
+
+.sectionTitle {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.searchLabel {
+  color: #334155;
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.searchRow {
+  display: flex;
+  gap: 8px;
+}
+
+.searchInput {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  flex: 1;
+  font-size: 1rem;
+  min-width: 0;
+  outline: none;
+  padding: 12px 14px;
+}
+
+.searchInput::placeholder {
+  color: #94a3b8;
+}
+
+.searchButton {
+  appearance: none;
+  background: #0f172a;
+  border: none;
+  border-radius: 10px;
+  color: #f8fafc;
+  font-size: 0.9rem;
+  font-weight: 600;
+  min-width: 86px;
+  padding: 12px 16px;
+}
+
+.searchButton:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+.helperText {
+  color: #64748b;
+  font-size: 0.85rem;
+  margin: 10px 0 0;
+}
+
+.statePanel {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  display: flex;
+  justify-content: center;
+  min-height: 148px;
+  padding: 16px;
+  text-align: center;
+}
+
+.statusText {
+  color: #334155;
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .title {
+    font-size: 1.7rem;
+  }
+
+  .searchRow {
+    flex-direction: column;
+  }
+
+  .searchButton {
+    width: 100%;
+  }
+}
