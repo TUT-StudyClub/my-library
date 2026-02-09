@@ -231,6 +231,27 @@
   margin: 0 0 4px;
 }
 
+.registerActionRow {
+  margin: 0 0 8px;
+}
+
+.registerActionButton {
+  align-items: center;
+  background: #0f172a;
+  border-radius: 9999px;
+  color: #f8fafc;
+  display: inline-flex;
+  font-size: 0.8rem;
+  font-weight: 600;
+  justify-content: center;
+  padding: 7px 12px;
+  text-decoration: none;
+}
+
+.registerActionButton:hover {
+  background: #1e293b;
+}
+
 .resultMeta {
   color: #334155;
   font-size: 0.85rem;
