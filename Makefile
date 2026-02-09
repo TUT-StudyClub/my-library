@@ -1,29 +1,88 @@
-.PHONY: lint format format-check typecheck
+.PHONY: check check-all check-frontend check-backend backend-setup backend-run db-smoke lint format format-check typecheck test
 
-lint:
+FRONTEND_DIR := frontend
+BACKEND_DIR := backend
+
+check:
+	@echo "== Detect changed files =="
+	@changedFiles="$$( (git diff --name-only HEAD; git ls-files --others --exclude-standard) | sort -u )"; \
+	if [ -z "$$changedFiles" ]; then \
+		echo "変更ファイルがないため、フルチェックを実行します。"; \
+		$(MAKE) check-all; \
+		exit $$?; \
+	fi; \
+	frontendChanged=0; \
+	backendChanged=0; \
+	sharedChanged=0; \
+	if printf '%s\n' "$$changedFiles" | grep -Eq '^frontend/'; then frontendChanged=1; fi; \
+	if printf '%s\n' "$$changedFiles" | grep -Eq '^backend/'; then backendChanged=1; fi; \
+	if printf '%s\n' "$$changedFiles" | grep -Eq '^(Makefile|\.github/workflows/ci\.yml)$$'; then sharedChanged=1; fi; \
+	if [ "$$sharedChanged" -eq 1 ]; then \
+		frontendChanged=1; \
+		backendChanged=1; \
+	fi; \
+	if [ "$$frontendChanged" -eq 0 ] && [ "$$backendChanged" -eq 0 ]; then \
+		echo "docs/README などの変更のみのため、check をスキップします。"; \
+		exit 0; \
+	fi; \
+	if [ "$$frontendChanged" -eq 1 ]; then \
+		$(MAKE) check-frontend || exit $$?; \
+	fi; \
+	if [ "$$backendChanged" -eq 1 ]; then \
+		$(MAKE) check-backend || exit $$?; \
+	fi
+
+check-all: lint format-check typecheck test
+
+check-frontend:
+	@echo "== Frontend check =="
+	cd $(FRONTEND_DIR) && npm run lint
+	cd $(FRONTEND_DIR) && npm run format:check
+	cd $(FRONTEND_DIR) && npm run typecheck
+
+check-backend: backend-setup
+	@echo "== Backend check =="
+	cd $(BACKEND_DIR) && uv run ruff check .
+	cd $(BACKEND_DIR) && uv run black --check .
+	cd $(BACKEND_DIR) && uv run mypy src
+	cd $(BACKEND_DIR) && uv run pytest -q
+
+backend-setup:
+	@echo "== Backend setup =="
+	cd $(BACKEND_DIR) && uv sync --extra dev
+
+db-smoke: backend-setup
+	@echo "== Backend register->fetch smoke =="
+	cd $(BACKEND_DIR) && uv run python -m src.db_smoke --log-path data/register_fetch_result.json
+
+backend-run: backend-setup
+	@echo "== Backend API start =="
+	cd $(BACKEND_DIR) && uv run python -m src
+
+lint: backend-setup
 	@echo "== Frontend lint =="
-	cd frontend && npm run lint
+	cd $(FRONTEND_DIR) && npm run lint
 	@echo "== Backend lint =="
-	cd backend && uv sync --extra dev
-	cd backend && uv run ruff check .
+	cd $(BACKEND_DIR) && uv run ruff check .
 
-format:
+format: backend-setup
 	@echo "== Frontend format =="
-	cd frontend && npm run format
+	cd $(FRONTEND_DIR) && npm run format
 	@echo "== Backend format =="
-	cd backend && uv sync --extra dev
-	cd backend && uv run black .
+	cd $(BACKEND_DIR) && uv run black .
 
-format-check:
+format-check: backend-setup
 	@echo "== Frontend format-check =="
-	cd frontend && npm run format:check
+	cd $(FRONTEND_DIR) && npm run format:check
 	@echo "== Backend format-check =="
-	cd backend && uv sync --extra dev
-	cd backend && uv run black --check .
+	cd $(BACKEND_DIR) && uv run black --check .
 
-typecheck:
+typecheck: backend-setup
 	@echo "== Frontend typecheck =="
-	cd frontend && npm run typecheck
+	cd $(FRONTEND_DIR) && npm run typecheck
 	@echo "== Backend typecheck =="
-	cd backend && uv sync --extra dev
-	cd backend && uv run mypy src/main.py
+	cd $(BACKEND_DIR) && uv run mypy src
+
+test: backend-setup
+	@echo "== Backend test =="
+	cd $(BACKEND_DIR) && uv run pytest -q

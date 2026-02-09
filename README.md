@@ -46,6 +46,10 @@ my-library-main/
 |--------|------|--------------|
 | NDL_API_BASE_URL | NDL Search API URL | https://ndlsearch.ndl.go.jp/api/opensearch |
 | ALLOWED_ORIGINS | CORS許可オリジン | http://localhost:3000 |
+| DB_PATH | SQLite DBファイルパス | backend/data/library.db |
+| API_HOST | API起動ホスト（任意） | 0.0.0.0 |
+| API_PORT | API起動ポート（任意） | 8000 |
+| API_RELOAD | APIリロード有効化（任意） | true |
 
 
 ### クイックスタート
@@ -55,7 +59,7 @@ my-library-main/
 cd backend
 uv sync
 cp .env.example .env
-uv run uvicorn src.main:app --reload --port 8000
+uv run python -m src
 ```
 
 2. Frontendを起動 (ポート3000)
@@ -73,11 +77,52 @@ npm run dev
 フロント/バックを一括で実行できます。
 
 ```bash
+make check
+make check-all
 make lint
 make format
 make format-check
 make typecheck
+make test
+make db-smoke
+make backend-run
 ```
+
+`make check` は変更ファイルから対象を判定して実行します（例: `docs/` や `README.md` のみ変更時はスキップ）。  
+常にフルチェックしたい場合は `make check-all` を使ってください。
+
+`make db-smoke` は backend 側で Series/Volume を1件ずつ登録し、直後に取得できることを確認します。  
+結果は `backend/data/register_fetch_result.json` に保存されます。
+
+### 同一ISBN重複保存の検証手順
+
+`volume.isbn` のユニーク制約により、同じISBNは2回保存できません。  
+以下の手順でローカル/CIの両方で再現できます。
+
+#### ローカル
+
+```bash
+# backendテスト一式（重複ISBNテストを含む）
+make test
+
+# 重複ISBNテストのみを実行
+cd backend
+uv run pytest -q tests/test_db_init.py -k duplicate_isbn
+```
+
+期待結果:
+- `make test`: テストがすべて `passed`
+- 重複ISBNテスト: `1 passed`（同一ISBNの2回目INSERTは `sqlite3.IntegrityError` で失敗）
+
+#### CI
+
+GitHub Actions の `CI` ワークフロー `backend` ジョブで以下を実行します。
+
+```bash
+uv run pytest -q
+```
+
+上記に `test_insert_rejects_duplicate_isbn` が含まれるため、同一ISBN重複保存の拒否をCIでも検証できます。
 
 ### 開発ルール / PR運用
 
@@ -160,17 +205,44 @@ cp .env.example .env
 # .envファイルを編集して必要な値を設定
 # NDL_API_BASE_URL=https://ndlsearch.ndl.go.jp/api/opensearch
 # ALLOWED_ORIGINS=http://localhost:3000
+# DB_PATH=data/library.db
+# API_HOST=0.0.0.0
+# API_PORT=8000
+# API_RELOAD=true
 ```
+
+`DB_PATH` を未設定にした場合、SQLite DB は固定で `backend/data/library.db` に作成されます。
 
 開発サーバーを起動:
 ```bash
-uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+uv run python -m src
+# ルートディレクトリから起動する場合:
+# make backend-run
 ```
 
 起動後、以下のエンドポイントが利用可能:
 - API: http://localhost:8000
 - ヘルスチェック: http://localhost:8000/health
 - API ドキュメント: http://localhost:8000/docs
+
+#### curlでの疎通確認手順
+
+1. 別ターミナルでヘルスチェックにアクセスし、HTTPステータスを確認
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/health
+```
+
+2. `200` が表示されることを確認
+
+3. レスポンス本文を確認する場合（任意）
+```bash
+curl http://localhost:8000/health
+```
+
+期待されるレスポンス例:
+```json
+{"status":"ok","message":"API is running"}
+```
 
 ## コード品質管理
 
