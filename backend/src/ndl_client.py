@@ -4,7 +4,7 @@ from typing import Any, Optional
 from xml.etree import ElementTree as ET
 
 import httpx
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.config import load_settings
 
@@ -33,11 +33,25 @@ class CatalogVolumeMetadata(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    title: str
-    author: Optional[str] = None
-    publisher: Optional[str] = None
-    volume_number: Optional[int] = None
-    cover_url: Optional[str] = None
+    title: str = Field(
+        description="シリーズタイトル。必須で返す。NDL応答の巻数表現は分離済み。",
+    )
+    author: Optional[str] = Field(
+        default=None,
+        description="著者名。NDL Searchから取得できない場合はnull。",
+    )
+    publisher: Optional[str] = Field(
+        default=None,
+        description="出版社名。NDL Searchから取得できない場合はnull。",
+    )
+    volume_number: Optional[int] = Field(
+        default=None,
+        description="巻数。抽出できない場合はnull。",
+    )
+    cover_url: Optional[str] = Field(
+        default=None,
+        description="表紙URL。書影情報が無い場合はnull（画像バイナリは返さない）。",
+    )
 
 
 class CatalogSearchCandidate(BaseModel):
@@ -45,12 +59,29 @@ class CatalogSearchCandidate(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    title: str
-    author: Optional[str] = None
-    publisher: Optional[str] = None
-    isbn: Optional[str] = None
-    volume_number: Optional[int] = None
-    cover_url: Optional[str] = None
+    title: str = Field(
+        description="候補タイトル（シリーズ名）。必須で返す。",
+    )
+    author: Optional[str] = Field(
+        default=None,
+        description="著者名。取得できない場合はnull。",
+    )
+    publisher: Optional[str] = Field(
+        default=None,
+        description="出版社名。取得できない場合はnull。",
+    )
+    isbn: Optional[str] = Field(
+        default=None,
+        description="ISBN-13（半角数字13桁）。抽出できない場合はnull。",
+    )
+    volume_number: Optional[int] = Field(
+        default=None,
+        description="巻数。抽出できない場合はnull。",
+    )
+    cover_url: Optional[str] = Field(
+        default=None,
+        description="表紙URL。書影情報が無い場合はnull（画像バイナリは返さない）。",
+    )
 
 
 class NdlClientError(Exception):
