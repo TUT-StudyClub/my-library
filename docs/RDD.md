@@ -42,6 +42,7 @@
 * Backend: FastAPI（Python）  
 * DB: SQLite（Dockerは使わない）  
 * 外部書誌: 国立国会図書館サーチ（NDL Search）  
+* 書影データ: MVPでは画像バイナリを保持せず、URLのみ扱う  
 * バーコードスキャン: ブラウザカメラ（例：html5-qrcode等）
 
 ---
@@ -240,6 +241,7 @@
 
 * `Volume.isbn` ユニーク（重複登録防止）  
 * `Volume.isbn` は正規化済みの半角数字13桁のみ保存する  
+* `Volume.cover_url` はURL文字列のみ保存し、画像バイナリ（BLOB/Base64/ファイル）は保存しない  
 * `series_id` 外部キー（SQLiteのFK有効化が前提）
 
 ## **7.3 全巻削除時の扱い（採用）**
@@ -651,6 +653,8 @@
 | `isbn` | string | 可 | ISBN-13（取得できない場合は `null`） |
 | `volume_number` | number | 可 | 巻数（取得できない場合は `null`） |
 | `cover_url` | string | 可 | 表紙URL（取得できない場合は `null`） |
+
+`cover_url` は参照先URLを返すための値であり、画像バイナリはAPIレスポンスに含めない。
 
 **レスポンス例（200 OK）**
 
