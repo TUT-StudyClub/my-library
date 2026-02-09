@@ -25,6 +25,7 @@ from src.ndl_client import (
     CatalogSearchCandidate,
     CatalogVolumeMetadata,
     NdlClientError,
+    OwnedStatus,
     fetch_catalog_volume_metadata,
     search_by_keyword,
 )
@@ -307,6 +308,46 @@ def _to_catalog_search_candidate_dto(
         isbn=candidate.isbn,
         volume_number=candidate.volume_number,
         cover_url=candidate.cover_url,
+        owned=candidate.owned,
+    )
+
+
+def _fetch_registered_isbn_set(
+    connection: sqlite3.Connection,
+    candidate_isbns: Sequence[str],
+) -> set[str]:
+    """候補ISBNのうちDB登録済みのISBN集合を返す."""
+    normalized_candidate_isbns = tuple(sorted(set(candidate_isbns)))
+    if len(normalized_candidate_isbns) == 0:
+        return set()
+
+    placeholders = ", ".join("?" for _ in normalized_candidate_isbns)
+    rows = connection.execute(
+        f"""
+        SELECT isbn
+        FROM volume
+        WHERE isbn IN ({placeholders});
+        """,
+        normalized_candidate_isbns,
+    ).fetchall()
+    return {str(row[0]) for row in rows}
+
+
+def _resolve_owned_status(candidate_isbn: Optional[str], owned_isbn_set: set[str]) -> OwnedStatus:
+    """候補ISBNと登録済みISBN集合から owned を解決する."""
+    if candidate_isbn is None:
+        return "unknown"
+
+    return candidate_isbn in owned_isbn_set
+
+
+def _attach_owned_status(
+    candidate: CatalogSearchCandidate,
+    owned_isbn_set: set[str],
+) -> CatalogSearchCandidate:
+    """候補DTOに owned 判定を付与した新しいDTOを返す."""
+    return candidate.model_copy(
+        update={"owned": _resolve_owned_status(candidate.isbn, owned_isbn_set)}
     )
 
 
@@ -763,6 +804,7 @@ async def list_library(
 
 @app.get("/api/catalog/search", response_model=list[CatalogSearchCandidate])
 async def search_catalog(
+    connection: Annotated[sqlite3.Connection, Depends(get_db_connection)],
     q: str,
     limit: Annotated[int, Query(ge=1, le=100)] = 10,
 ):
@@ -770,17 +812,32 @@ async def search_catalog(
     candidates: list[CatalogSearchCandidate] = await run_in_threadpool(
         _search_catalog_by_keyword, q, limit
     )
-    return [_to_catalog_search_candidate_dto(candidate) for candidate in candidates]
+    candidate_dtos = [_to_catalog_search_candidate_dto(candidate) for candidate in candidates]
+    owned_isbn_set = _fetch_registered_isbn_set(
+        connection=connection,
+        candidate_isbns=[
+            candidate.isbn for candidate in candidate_dtos if candidate.isbn is not None
+        ],
+    )
+    return [_attach_owned_status(candidate, owned_isbn_set) for candidate in candidate_dtos]
 
 
 @app.get("/api/catalog/lookup", response_model=CatalogSearchCandidate)
-async def lookup_catalog(isbn: str):
+async def lookup_catalog(
+    isbn: str,
+    connection: Annotated[sqlite3.Connection, Depends(get_db_connection)],
+):
     """外部カタログを識別子検索し、最良候補1件を返す."""
     normalized_isbn = _normalize_isbn(isbn)
     candidate: CatalogSearchCandidate = await run_in_threadpool(
         _lookup_catalog_by_identifier, normalized_isbn
     )
-    return _to_catalog_search_candidate_dto(candidate)
+    candidate_dto = _to_catalog_search_candidate_dto(candidate)
+    owned_isbn_set = _fetch_registered_isbn_set(
+        connection=connection,
+        candidate_isbns=[candidate_dto.isbn] if candidate_dto.isbn is not None else [],
+    )
+    return _attach_owned_status(candidate_dto, owned_isbn_set)
 
 
 @app.get("/api/series/{series_id}", response_model=SeriesDetailResponse)
