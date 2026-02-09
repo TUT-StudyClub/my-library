@@ -5,6 +5,7 @@ import { type FormEvent, useState } from "react";
 import styles from "./SearchTabPage.module.css";
 
 type CatalogSearchCandidate = {
+  owned: true | false | "unknown";
   title: string;
   author: string | null;
   publisher: string | null;
@@ -18,6 +19,18 @@ type SearchResultStatus = "idle" | "loading" | "error" | "empty" | "success";
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const DEFAULT_SEARCH_ERROR_MESSAGE = "検索に失敗しました。";
 const SEARCH_LIMIT = 20;
+
+function getOwnedLabel(owned: CatalogSearchCandidate["owned"]): string {
+  if (owned === true) {
+    return "所持済み";
+  }
+
+  if (owned === false) {
+    return "未所持";
+  }
+
+  return "判定不可（ISBN不明）";
+}
 
 function extractSearchErrorMessage(errorPayload: unknown, statusCode: number): string {
   if (
@@ -194,6 +207,9 @@ export function SearchTabPage() {
                       key={`${candidate.isbn ?? "unknown"}-${index}`}
                     >
                       <p className={styles.resultTitle}>{candidate.title}</p>
+                      <p className={styles.statusText}>
+                        所持判定: {getOwnedLabel(candidate.owned)}
+                      </p>
                       <p className={styles.resultMeta}>
                         著者: {candidate.author ?? "不明"} / 出版社: {candidate.publisher ?? "不明"}{" "}
                         / ISBN: {candidate.isbn ?? "不明"} / 巻数:{" "}
