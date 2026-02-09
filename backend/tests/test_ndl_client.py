@@ -48,6 +48,58 @@ def test_ndl_client_fetches_volume_metadata_from_ndl_api(monkeypatch):
     )
 
 
+def test_ndl_client_fetches_cover_url_from_thumbnail_link_when_enclosure_is_missing(monkeypatch):
+    """Enclosure が無くても書影相当 link から表紙URLを抽出できる."""
+    xml_text = """
+    <rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcndl="http://ndl.go.jp/dcndl/terms/">
+      <channel>
+        <item>
+          <dc:title>サムネイル作品 第7巻</dc:title>
+          <dc:creator>サムネイル著者</dc:creator>
+          <dc:publisher>サムネイル出版社</dc:publisher>
+          <dcndl:volume>第7巻</dcndl:volume>
+          <link rel="http://ndl.go.jp/dcndl/terms/thumbnail" href="https://example.com/covers/thumb-7.jpg" />
+        </item>
+      </channel>
+    </rss>
+    """.strip()
+
+    def fake_get(url: str, params: dict[str, Any], timeout: float):
+        return SimpleNamespace(status_code=200, text=xml_text)
+
+    monkeypatch.setattr(ndl_client.httpx, "get", fake_get)
+    client = ndl_client.NdlClient(base_url="https://example.com/ndl")
+
+    metadata = client.fetch_catalog_volume_metadata("9780000000123")
+
+    assert metadata.cover_url == "https://example.com/covers/thumb-7.jpg"
+
+
+def test_ndl_client_returns_none_cover_url_when_only_non_cover_link_exists(monkeypatch):
+    """書影相当ではない link のみの場合は cover_url を欠損にする."""
+    xml_text = """
+    <rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcndl="http://ndl.go.jp/dcndl/terms/">
+      <channel>
+        <item>
+          <dc:title>リンクのみ作品 第2巻</dc:title>
+          <dcndl:volume>第2巻</dcndl:volume>
+          <link rel="alternate" href="https://example.com/books/volume-2" />
+        </item>
+      </channel>
+    </rss>
+    """.strip()
+
+    def fake_get(url: str, params: dict[str, Any], timeout: float):
+        return SimpleNamespace(status_code=200, text=xml_text)
+
+    monkeypatch.setattr(ndl_client.httpx, "get", fake_get)
+    client = ndl_client.NdlClient(base_url="https://example.com/ndl")
+
+    metadata = client.fetch_catalog_volume_metadata("9780000000123")
+
+    assert metadata.cover_url is None
+
+
 def test_ndl_client_returns_timeout_client_error(monkeypatch):
     """NDL APIタイムアウト時に方針回数まで再試行し、504を返す."""
     called_count = 0
