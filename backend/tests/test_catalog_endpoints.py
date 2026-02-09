@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from src import main
@@ -239,6 +240,66 @@ def test_lookup_catalog_rejects_invalid_isbn(monkeypatch, tmp_path):
             "details": {"isbn": "978-abc"},
         }
     }
+
+
+@pytest.mark.parametrize(
+    ("scenario", "expected_status", "expected_body"),
+    [
+        (
+            "timeout",
+            504,
+            {
+                "error": {
+                    "code": "NDL_API_TIMEOUT",
+                    "message": "NDL API request timed out",
+                    "details": {
+                        "upstream": "NDL Search",
+                        "externalFailure": True,
+                        "failureType": "timeout",
+                        "retryable": True,
+                        "timeoutSeconds": 10,
+                    },
+                }
+            },
+        ),
+        (
+            "non_200_response",
+            502,
+            {
+                "error": {
+                    "code": "NDL_API_BAD_GATEWAY",
+                    "message": "NDL API returned non-200 status",
+                    "details": {
+                        "upstream": "NDL Search",
+                        "externalFailure": True,
+                        "failureType": "invalidResponse",
+                        "retryable": True,
+                        "statusCode": 503,
+                    },
+                }
+            },
+        ),
+    ],
+)
+def test_search_catalog_replays_representative_upstream_failure_scenarios(
+    monkeypatch, tmp_path, mock_ndl_api, scenario: str, expected_status: int, expected_body: dict
+):
+    """検索APIの代表的な上流異常系をモックで再現し、応答を固定する."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    if scenario == "timeout":
+        mock_ndl_api.enqueue_timeout()
+        mock_ndl_api.enqueue_timeout()
+    else:
+        mock_ndl_api.enqueue_response(status_code=503)
+        mock_ndl_api.enqueue_response(status_code=503)
+
+    with TestClient(main.app) as client:
+        response = client.get("/api/catalog/search", params={"q": "候補", "limit": 1})
+
+    assert response.status_code == expected_status
+    assert response.json() == expected_body
 
 
 def test_search_catalog_converts_unexpected_external_exception_to_bad_gateway(
