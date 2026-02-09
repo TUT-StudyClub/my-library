@@ -32,6 +32,22 @@ function getOwnedLabel(owned: CatalogSearchCandidate["owned"]): string {
   return "判定不可（ISBN不明）";
 }
 
+function getCandidateOwnedLabel(candidate: CatalogSearchCandidate): string {
+  if (candidate.isbn === null) {
+    return "判定不可（ISBN不明）";
+  }
+
+  return getOwnedLabel(candidate.owned);
+}
+
+function getRegistrationAvailabilityLabel(candidate: CatalogSearchCandidate): string {
+  if (candidate.isbn === null) {
+    return "ISBNがないため、この候補は登録できません。";
+  }
+
+  return "ISBNあり（登録対象）";
+}
+
 function extractSearchErrorMessage(errorPayload: unknown, statusCode: number): string {
   if (
     typeof errorPayload === "object" &&
@@ -208,7 +224,10 @@ export function SearchTabPage() {
                     >
                       <p className={styles.resultTitle}>{candidate.title}</p>
                       <p className={styles.statusText}>
-                        所持判定: {getOwnedLabel(candidate.owned)}
+                        所持判定: {getCandidateOwnedLabel(candidate)}
+                      </p>
+                      <p className={styles.statusDetail}>
+                        {getRegistrationAvailabilityLabel(candidate)}
                       </p>
                       <p className={styles.resultMeta}>
                         著者: {candidate.author ?? "不明"} / 出版社: {candidate.publisher ?? "不明"}{" "}
