@@ -95,6 +95,110 @@ def test_lookup_catalog_returns_single_candidate_with_status_200(monkeypatch, tm
     }
 
 
+def test_search_catalog_passes_candidates_through_common_dto_conversion(monkeypatch, tmp_path):
+    """キーワード検索APIが共通DTO変換関数を経由して候補を返す."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    called = {"count": 0}
+
+    def fake_search_catalog_by_keyword(q: str, limit: int) -> list[main.CatalogSearchCandidate]:
+        return [
+            main.CatalogSearchCandidate(
+                title="変換前候補",
+                author="著者",
+                publisher=None,
+                isbn="9780000000001",
+                volume_number=1,
+                cover_url=None,
+            )
+        ]
+
+    def fake_to_catalog_search_candidate_dto(
+        candidate: main.CatalogSearchCandidate,
+    ) -> main.CatalogSearchCandidate:
+        called["count"] += 1
+        return main.CatalogSearchCandidate(
+            title=f"DTO-{candidate.title}",
+            author=candidate.author,
+            publisher=candidate.publisher,
+            isbn=candidate.isbn,
+            volume_number=candidate.volume_number,
+            cover_url=candidate.cover_url,
+        )
+
+    monkeypatch.setattr(main, "_search_catalog_by_keyword", fake_search_catalog_by_keyword)
+    monkeypatch.setattr(
+        main, "_to_catalog_search_candidate_dto", fake_to_catalog_search_candidate_dto
+    )
+
+    with TestClient(main.app) as client:
+        response = client.get("/api/catalog/search", params={"q": "候補", "limit": 1})
+
+    assert response.status_code == 200
+    assert called == {"count": 1}
+    assert response.json() == [
+        {
+            "title": "DTO-変換前候補",
+            "author": "著者",
+            "publisher": None,
+            "isbn": "9780000000001",
+            "volume_number": 1,
+            "cover_url": None,
+        }
+    ]
+
+
+def test_lookup_catalog_passes_candidate_through_common_dto_conversion(monkeypatch, tmp_path):
+    """識別子検索APIが共通DTO変換関数を経由して候補を返す."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    called = {"count": 0}
+
+    def fake_lookup_catalog_by_identifier(isbn: str) -> main.CatalogSearchCandidate:
+        return main.CatalogSearchCandidate(
+            title="変換前識別子候補",
+            author="著者",
+            publisher=None,
+            isbn=isbn,
+            volume_number=2,
+            cover_url=None,
+        )
+
+    def fake_to_catalog_search_candidate_dto(
+        candidate: main.CatalogSearchCandidate,
+    ) -> main.CatalogSearchCandidate:
+        called["count"] += 1
+        return main.CatalogSearchCandidate(
+            title=f"DTO-{candidate.title}",
+            author=candidate.author,
+            publisher=candidate.publisher,
+            isbn=candidate.isbn,
+            volume_number=candidate.volume_number,
+            cover_url=candidate.cover_url,
+        )
+
+    monkeypatch.setattr(main, "_lookup_catalog_by_identifier", fake_lookup_catalog_by_identifier)
+    monkeypatch.setattr(
+        main, "_to_catalog_search_candidate_dto", fake_to_catalog_search_candidate_dto
+    )
+
+    with TestClient(main.app) as client:
+        response = client.get("/api/catalog/lookup", params={"isbn": "9780000000001"})
+
+    assert response.status_code == 200
+    assert called == {"count": 1}
+    assert response.json() == {
+        "title": "DTO-変換前識別子候補",
+        "author": "著者",
+        "publisher": None,
+        "isbn": "9780000000001",
+        "volume_number": 2,
+        "cover_url": None,
+    }
+
+
 def test_lookup_catalog_returns_not_found_when_identifier_has_no_result(monkeypatch, tmp_path):
     """識別子検索APIが候補0件時に404の統一エラーを返す."""
     db_path = tmp_path / "library.db"
