@@ -53,7 +53,8 @@
 * **Volume（巻）**：巻単位（識別子＝ISBNを主キー相当として扱う）  
 * **所持内検索**：DBに登録済み（所持済み）だけを検索する  
 * **外部検索**：NDL Searchで書誌候補を検索する  
-* **所持判定**：候補の識別子がDBに存在するかで所持済み/未所持を判定する  
+* **所持判定**：候補の識別子（ISBN）とDB照合で `owned` を判定する  
+* **`owned`**：検索候補の所持判定値。`true` / `false` / `"unknown"` の3値を取る  
 * **未登録巻候補**：作品詳細ページ上段に表示する「未所持の候補巻」
 
 ---
@@ -71,7 +72,7 @@
   * Seriesクリックで作品詳細へ  
 * **タブ2：検索（サブ）**  
   * 外部検索（NDL Search）  
-  * 所持判定（所持済み/未所持）  
+  * 所持判定（所持済み/未所持/判定不可）  
   * 未所持の登録  
 * **スキャン画面（登録画面）**  
   * バーコード読み取り→登録  
@@ -148,12 +149,19 @@
 ### **6.3.2 結果表示**
 
 * タイトル、著者（可能なら）、出版社（可能なら）、書影（可能なら）  
-* 候補ごとに **所持済み/未所持** を表示
+* 候補ごとに `owned` に応じた表示文言を固定で表示する
+
+| `owned` | 条件 | 表示文言 |
+|---|---|---|
+| `true` | 同一ISBNがDBに存在する | `所持済み` |
+| `false` | ISBNはあるがDBに存在しない | `未所持` |
+| `"unknown"` | ISBNが欠損（`isbn = null`）で判定できない | `判定不可（ISBN不明）` |
 
 ### **6.3.3 登録**
 
-* 未所持候補は登録ボタンを表示  
-* 登録後、所持済みに表示更新する
+* `owned = false` の候補のみ登録ボタンを表示する  
+* `owned = true` / `owned = "unknown"` の候補は登録ボタンを表示しない  
+* 登録後、該当候補の `owned` を `true` に更新し、表示文言を `所持済み` に切り替える
 
 ---
 
@@ -617,7 +625,7 @@
 #### **8.2.1 GET /api/catalog/search（検索タブ候補取得）**
 
 検索タブでキーワード検索し、NDL Search の候補一覧を取得するエンドポイント。  
-本Story時点では **候補取得のみ** を返し、`owned`（所持判定）は含めない。
+候補ごとに `owned`（所持判定）を返す。
 
 **HTTPメソッド/パス**
 
@@ -653,8 +661,15 @@
 | `isbn` | string | 可 | ISBN-13（取得できない場合は `null`） |
 | `volume_number` | number | 可 | 巻数（取得できない場合は `null`） |
 | `cover_url` | string | 可 | 表紙URL（取得できない場合は `null`） |
+| `owned` | boolean or string | 不可 | 所持判定。`true` / `false` / `"unknown"` |
 
 `cover_url` は参照先URLを返すための値であり、画像バイナリはAPIレスポンスに含めない。
+
+`owned` の判定ルールは以下で固定する。
+
+1. `isbn = null` の場合は `owned = "unknown"`  
+2. `isbn` があり、DB（`volume.isbn`）に同一値が存在する場合は `owned = true`  
+3. `isbn` があり、DBに同一値が存在しない場合は `owned = false`
 
 **レスポンス例（200 OK）**
 
@@ -666,15 +681,26 @@
     "publisher": "小学館",
     "isbn": "9784098515762",
     "volume_number": 1,
-    "cover_url": "https://example.com/covers/frieren-1.jpg"
+    "cover_url": "https://example.com/covers/frieren-1.jpg",
+    "owned": true
+  },
+  {
+    "title": "葬送のフリーレン",
+    "author": "山田鐘人",
+    "publisher": "小学館",
+    "isbn": "9784098515854",
+    "volume_number": 2,
+    "cover_url": "https://example.com/covers/frieren-2.jpg",
+    "owned": false
   },
   {
     "title": "葬送のフリーレン",
     "author": "山田鐘人",
     "publisher": "小学館",
     "isbn": null,
-    "volume_number": 2,
-    "cover_url": null
+    "volume_number": 3,
+    "cover_url": null,
+    "owned": "unknown"
   }
 ]
 ```
@@ -754,7 +780,8 @@
 
 **レスポンス（200 OK）**
 
-検索結果の最良候補を1件返す。レスポンスDTOは `GET /api/catalog/search` と同一の `CatalogSearchCandidate` を使う。
+検索結果の最良候補を1件返す。レスポンスDTOは `GET /api/catalog/search` と同一の `CatalogSearchCandidate` を使う。  
+`owned` の定義・判定ルールも `8.2.1` と同一。
 
 **レスポンス例（200 OK）**
 
@@ -765,7 +792,8 @@
   "publisher": "小学館",
   "isbn": "9784098515762",
   "volume_number": 1,
-  "cover_url": "https://example.com/covers/frieren-1.jpg"
+  "cover_url": "https://example.com/covers/frieren-1.jpg",
+  "owned": false
 }
 ```
 
@@ -795,9 +823,16 @@
 | `title` | string | 必須 | 欠損は許容しない | 候補表示の主キーとして扱う |
 | `author` | string | 任意 | 取得できない場合は `null` | `null` は「著者不明」として表示可 |
 | `publisher` | string | 任意 | 取得できない場合は `null` | `null` は「出版社不明」として表示可 |
-| `isbn` | string | 任意 | 抽出できない場合は `null` | `null` は所持判定不可として扱う（ISBN前提の登録処理は無効化） |
+| `isbn` | string | 任意 | 抽出できない場合は `null` | `null` の場合 `owned = "unknown"` として扱う（ISBN前提の登録処理は無効化） |
 | `volume_number` | number | 任意 | 抽出できない場合は `null` | `null` は不明巻として扱う（例: `?巻`） |
 | `cover_url` | string | 任意 | 書影情報が無い場合は `null` | `null` はプレースホルダ画像を表示 |
+| `owned` | boolean or string | 必須 | 欠損は許容しない。`true` / `false` / `"unknown"` | 表示文言は `true=所持済み`、`false=未所持`、`"unknown"=判定不可（ISBN不明）` |
+
+フロント実装時の型定義例（TypeScript）:
+
+```ts
+type Owned = true | false | "unknown";
+```
 
 `cover_url` は参照先URLを返すための値であり、画像バイナリはAPIレスポンスに含めない。
 
