@@ -287,12 +287,77 @@ def _extract_first_non_empty_text(
 
 
 def _extract_cover_url(item: ET.Element) -> Optional[str]:
-    """RSS item の enclosure から表紙URLを抽出する."""
-    enclosure = item.find("enclosure")
-    if enclosure is None:
+    """RSS item から表紙URL（または同等リンク）を抽出する."""
+    for child in item:
+        if _extract_xml_local_name(child.tag) != "enclosure":
+            continue
+
+        enclosure_url = _normalize_optional_text(_extract_attribute_value(child, "url"))
+        if enclosure_url is not None:
+            return enclosure_url
+
+    for child in item:
+        if _extract_xml_local_name(child.tag) != "link":
+            continue
+
+        cover_url_from_link = _extract_cover_url_from_link(child)
+        if cover_url_from_link is not None:
+            return cover_url_from_link
+
+    for child in item:
+        if _extract_xml_local_name(child.tag) not in {"thumbnail", "icon"}:
+            continue
+
+        cover_url_from_text = _normalize_optional_text(child.text)
+        if cover_url_from_text is not None:
+            return cover_url_from_text
+
+    return None
+
+
+def _extract_xml_local_name(qualified_name: str) -> str:
+    """XMLの修飾名からローカル名を抽出する."""
+    if "}" not in qualified_name:
+        return qualified_name
+
+    return qualified_name.split("}", maxsplit=1)[1]
+
+
+def _extract_attribute_value(node: ET.Element, attribute_name: str) -> Optional[str]:
+    """属性名を名前空間非依存で検索して値を取得する."""
+    for key, value in node.attrib.items():
+        if _extract_xml_local_name(key) != attribute_name:
+            continue
+
+        return value
+
+    return None
+
+
+def _extract_cover_url_from_link(link_node: ET.Element) -> Optional[str]:
+    """Link 要素が書影相当リンクならURLを返す."""
+    link_url = _normalize_optional_text(
+        _extract_attribute_value(link_node, "href") or _extract_attribute_value(link_node, "url")
+    )
+    if link_url is None:
         return None
 
-    return _normalize_optional_text(enclosure.attrib.get("url"))
+    rel_value = (_normalize_optional_text(_extract_attribute_value(link_node, "rel")) or "").lower()
+    type_value = (
+        _normalize_optional_text(_extract_attribute_value(link_node, "type")) or ""
+    ).lower()
+    lower_url = link_url.lower()
+
+    if "thumbnail" in rel_value or "icon" in rel_value:
+        return link_url
+
+    if type_value.startswith("image/"):
+        return link_url
+
+    if "thumbnail" in lower_url or "/thumb" in lower_url or "cover" in lower_url:
+        return link_url
+
+    return None
 
 
 def _extract_isbn13(text_value: Optional[str]) -> Optional[str]:
