@@ -264,6 +264,20 @@ def _lookup_catalog_by_identifier(isbn: str) -> CatalogSearchCandidate:
     return candidate
 
 
+def _to_catalog_search_candidate_dto(
+    candidate: CatalogSearchCandidate,
+) -> CatalogSearchCandidate:
+    """カタログ候補をAPIレスポンスDTOへ変換する."""
+    return CatalogSearchCandidate(
+        title=candidate.title,
+        author=candidate.author,
+        publisher=candidate.publisher,
+        isbn=candidate.isbn,
+        volume_number=candidate.volume_number,
+        cover_url=candidate.cover_url,
+    )
+
+
 def _find_or_create_series(
     connection: sqlite3.Connection, title: str, author: Optional[str], publisher: Optional[str]
 ) -> SeriesResponse:
@@ -724,7 +738,7 @@ async def search_catalog(
     candidates: list[CatalogSearchCandidate] = await run_in_threadpool(
         _search_catalog_by_keyword, q, limit
     )
-    return candidates
+    return [_to_catalog_search_candidate_dto(candidate) for candidate in candidates]
 
 
 @app.get("/api/catalog/lookup", response_model=CatalogSearchCandidate)
@@ -734,7 +748,7 @@ async def lookup_catalog(isbn: str):
     candidate: CatalogSearchCandidate = await run_in_threadpool(
         _lookup_catalog_by_identifier, normalized_isbn
     )
-    return candidate
+    return _to_catalog_search_candidate_dto(candidate)
 
 
 @app.get("/api/series/{series_id}", response_model=SeriesDetailResponse)
