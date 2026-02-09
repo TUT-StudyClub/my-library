@@ -45,7 +45,11 @@ function getRegistrationAvailabilityLabel(candidate: CatalogSearchCandidate): st
     return "ISBNがないため、この候補は登録できません。";
   }
 
-  return "ISBNあり（登録対象）";
+  if (candidate.owned === false) {
+    return "未所持のため登録できます。";
+  }
+
+  return "ISBNあり";
 }
 
 function extractSearchErrorMessage(errorPayload: unknown, statusCode: number): string {
@@ -217,25 +221,39 @@ export function SearchTabPage() {
                   「{displayedQuery}」の検索結果: {candidates.length} 件
                 </p>
                 <ul className={styles.resultList}>
-                  {candidates.map((candidate, index) => (
-                    <li
-                      className={styles.resultItem}
-                      key={`${candidate.isbn ?? "unknown"}-${index}`}
-                    >
-                      <p className={styles.resultTitle}>{candidate.title}</p>
-                      <p className={styles.statusText}>
-                        所持判定: {getCandidateOwnedLabel(candidate)}
-                      </p>
-                      <p className={styles.statusDetail}>
-                        {getRegistrationAvailabilityLabel(candidate)}
-                      </p>
-                      <p className={styles.resultMeta}>
-                        著者: {candidate.author ?? "不明"} / 出版社: {candidate.publisher ?? "不明"}{" "}
-                        / ISBN: {candidate.isbn ?? "不明"} / 巻数:{" "}
-                        {candidate.volume_number ?? "不明"}
-                      </p>
-                    </li>
-                  ))}
+                  {candidates.map((candidate, index) => {
+                    const registerPageUrl =
+                      candidate.owned === false && candidate.isbn !== null
+                        ? `/library/register?isbn=${encodeURIComponent(candidate.isbn)}`
+                        : null;
+
+                    return (
+                      <li
+                        className={styles.resultItem}
+                        key={`${candidate.isbn ?? "unknown"}-${index}`}
+                      >
+                        <p className={styles.resultTitle}>{candidate.title}</p>
+                        <p className={styles.statusText}>
+                          所持判定: {getCandidateOwnedLabel(candidate)}
+                        </p>
+                        <p className={styles.statusDetail}>
+                          {getRegistrationAvailabilityLabel(candidate)}
+                        </p>
+                        {registerPageUrl !== null && (
+                          <p className={styles.registerActionRow}>
+                            <Link className={styles.registerActionButton} href={registerPageUrl}>
+                              登録を開始
+                            </Link>
+                          </p>
+                        )}
+                        <p className={styles.resultMeta}>
+                          著者: {candidate.author ?? "不明"} / 出版社:{" "}
+                          {candidate.publisher ?? "不明"} / ISBN: {candidate.isbn ?? "不明"} / 巻数:{" "}
+                          {candidate.volume_number ?? "不明"}
+                        </p>
+                      </li>
+                    );
+                  })}
                 </ul>
               </>
             )}
