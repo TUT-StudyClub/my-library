@@ -241,6 +241,66 @@ def test_lookup_catalog_rejects_invalid_isbn(monkeypatch, tmp_path):
     }
 
 
+def test_search_catalog_converts_unexpected_external_exception_to_bad_gateway(
+    monkeypatch, tmp_path
+):
+    """キーワード検索で想定外の外部例外が発生しても 502 の統一エラーを返す."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    def raise_unexpected_error(*_args, **_kwargs):
+        raise RuntimeError("unexpected external failure")
+
+    monkeypatch.setattr(main, "search_by_keyword", raise_unexpected_error)
+
+    with TestClient(main.app) as client:
+        response = client.get("/api/catalog/search", params={"q": "候補", "limit": 1})
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "error": {
+            "code": "NDL_API_BAD_GATEWAY",
+            "message": "Failed to connect NDL API",
+            "details": {
+                "upstream": "NDL Search",
+                "externalFailure": True,
+                "failureType": "communication",
+                "retryable": False,
+            },
+        }
+    }
+
+
+def test_lookup_catalog_converts_unexpected_external_exception_to_bad_gateway(
+    monkeypatch, tmp_path
+):
+    """識別子検索で想定外の外部例外が発生しても 502 の統一エラーを返す."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    def raise_unexpected_error(*_args, **_kwargs):
+        raise RuntimeError("unexpected external failure")
+
+    monkeypatch.setattr(main, "ndl_lookup_by_identifier", raise_unexpected_error)
+
+    with TestClient(main.app) as client:
+        response = client.get("/api/catalog/lookup", params={"isbn": "9780000000999"})
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "error": {
+            "code": "NDL_API_BAD_GATEWAY",
+            "message": "Failed to connect NDL API",
+            "details": {
+                "upstream": "NDL Search",
+                "externalFailure": True,
+                "failureType": "communication",
+                "retryable": False,
+            },
+        }
+    }
+
+
 def test_catalog_search_candidate_schema_documents_field_meanings():
     """CatalogSearchCandidateスキーマに意味と欠損時の説明がある."""
     openapi_schema = main.app.openapi()
