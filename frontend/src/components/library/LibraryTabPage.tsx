@@ -158,7 +158,9 @@ export function LibraryTabPage() {
 
         <nav aria-label="メインタブ" className={styles.tabs}>
           <span className={`${styles.tab} ${styles.tabActive}`}>ライブラリ</span>
-          <span className={`${styles.tab} ${styles.tabInactive}`}>検索</span>
+          <Link className={`${styles.tab} ${styles.tabInactive}`} href="/search">
+            検索
+          </Link>
         </nav>
 
         <section className={styles.section}>
