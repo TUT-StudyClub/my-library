@@ -76,6 +76,10 @@
   margin-bottom: 8px;
 }
 
+.searchForm {
+  margin: 0;
+}
+
 .searchRow {
   display: flex;
   gap: 8px;
@@ -117,6 +121,12 @@
   color: #64748b;
   font-size: 0.85rem;
   margin: 10px 0 0;
+}
+
+.errorText {
+  color: #b91c1c;
+  font-size: 0.85rem;
+  margin: 8px 0 0;
 }
 
 .statePanel {
