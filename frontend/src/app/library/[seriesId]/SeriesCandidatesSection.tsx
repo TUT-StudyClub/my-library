@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { publishLibraryRefreshSignal } from "@/lib/libraryRefreshSignal";
+import { publishSeriesVolumeRegistered, type SeriesVolume } from "@/lib/seriesVolumeSignal";
 import styles from "./page.module.css";
 
 type SeriesCandidate = {
@@ -112,6 +113,59 @@ function extractRegisteredIsbn(payload: unknown): string | null {
   }
 
   return null;
+}
+
+function extractRegisteredSeriesId(payload: unknown): string | null {
+  if (
+    typeof payload === "object" &&
+    payload !== null &&
+    "series" in payload &&
+    typeof payload.series === "object" &&
+    payload.series !== null &&
+    "id" in payload.series &&
+    typeof payload.series.id === "number"
+  ) {
+    return payload.series.id.toString();
+  }
+
+  return null;
+}
+
+function extractRegisteredVolume(payload: unknown): SeriesVolume | null {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("volume" in payload) ||
+    typeof payload.volume !== "object" ||
+    payload.volume === null ||
+    !("isbn" in payload.volume) ||
+    typeof payload.volume.isbn !== "string" ||
+    !("volume_number" in payload.volume) ||
+    (typeof payload.volume.volume_number !== "number" && payload.volume.volume_number !== null) ||
+    !("cover_url" in payload.volume) ||
+    (typeof payload.volume.cover_url !== "string" && payload.volume.cover_url !== null) ||
+    !("registered_at" in payload.volume) ||
+    typeof payload.volume.registered_at !== "string"
+  ) {
+    return null;
+  }
+
+  const normalizedIsbn = payload.volume.isbn.trim();
+  if (normalizedIsbn === "") {
+    return null;
+  }
+
+  const normalizedRegisteredAt = payload.volume.registered_at.trim();
+  if (normalizedRegisteredAt === "") {
+    return null;
+  }
+
+  return {
+    isbn: normalizedIsbn,
+    volume_number: payload.volume.volume_number,
+    cover_url: payload.volume.cover_url,
+    registered_at: normalizedRegisteredAt,
+  };
 }
 
 function isSeriesCandidate(value: unknown): value is SeriesCandidate {
@@ -334,12 +388,20 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
 
       const successPayload = (await response.json().catch(() => null)) as unknown;
       const registeredIsbn = extractRegisteredIsbn(successPayload) ?? targetCandidate.isbn;
+      const registeredSeriesId = extractRegisteredSeriesId(successPayload);
+      const registeredVolume = extractRegisteredVolume(successPayload);
       showRegisterResultToast("success", `登録しました（ISBN: ${registeredIsbn}）。`);
       setCandidates((currentCandidates) =>
         currentCandidates.filter((candidate) => candidate.isbn !== targetCandidate.isbn)
       );
       setSelectedCandidate(null);
       setReloadKey((currentValue) => currentValue + 1);
+      if (registeredSeriesId === seriesId && registeredVolume !== null) {
+        publishSeriesVolumeRegistered({
+          seriesId: registeredSeriesId,
+          volume: registeredVolume,
+        });
+      }
       publishLibraryRefreshSignal();
       router.refresh();
     } catch {
