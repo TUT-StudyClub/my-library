@@ -291,6 +291,43 @@ def test_create_volume_replays_representative_upstream_failure_scenarios(
     assert response.json() == expected_body
 
 
+def test_create_volume_returns_not_found_when_ndl_returns_non_exact_isbn_item(
+    monkeypatch, tmp_path, mock_ndl_api
+):
+    """ISBN検索結果が非一致のみの場合、巻登録APIは404を返す."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+    mock_ndl_api.enqueue_response(
+        status_code=200,
+        text="""
+            <rss xmlns:dc="http://purl.org/dc/elements/1.1/">
+              <channel>
+                <item>
+                  <dc:title>別作品 第1巻</dc:title>
+                  <dc:identifier>9780000000999</dc:identifier>
+                </item>
+              </channel>
+            </rss>
+        """.strip(),
+    )
+
+    with TestClient(main.app) as client:
+        response = client.post("/api/volumes", json={"isbn": "9780000000005"})
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "error": {
+            "code": "CATALOG_ITEM_NOT_FOUND",
+            "message": "Catalog item not found",
+            "details": {
+                "isbn": "9780000000005",
+                "upstream": "NDL Search",
+                "externalFailure": False,
+            },
+        }
+    }
+
+
 def test_create_volume_converts_unexpected_external_exception_to_bad_gateway(monkeypatch, tmp_path):
     """巻登録で想定外の外部例外が発生しても 502 の統一エラーを返す."""
     db_path = tmp_path / "library.db"
