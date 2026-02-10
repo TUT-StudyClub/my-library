@@ -1,6 +1,8 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { publishLibraryRefreshSignal } from "@/lib/libraryRefreshSignal";
 import { type SeriesVolume, subscribeSeriesVolumeRegistered } from "@/lib/seriesVolumeSignal";
 import styles from "./page.module.css";
 
@@ -8,6 +10,10 @@ type RegisteredVolumesSectionProps = {
   seriesId: string;
   initialVolumes: SeriesVolume[];
 };
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const DEFAULT_DELETE_ERROR_MESSAGE = "巻の削除に失敗しました。";
+const DELETE_REQUEST_ERROR_MESSAGE = "削除リクエストの送信に失敗しました。";
 
 function sortSeriesVolumes(volumes: SeriesVolume[]): SeriesVolume[] {
   return [...volumes].sort((leftVolume, rightVolume) => {
@@ -56,11 +62,33 @@ function formatRegisteredAt(registeredAt: string): string {
   return parsedDate.toLocaleString("ja-JP", { hour12: false });
 }
 
+function extractDeleteErrorMessage(errorPayload: unknown, statusCode: number): string {
+  if (
+    typeof errorPayload === "object" &&
+    errorPayload !== null &&
+    "error" in errorPayload &&
+    typeof errorPayload.error === "object" &&
+    errorPayload.error !== null &&
+    "message" in errorPayload.error &&
+    typeof errorPayload.error.message === "string"
+  ) {
+    const message = errorPayload.error.message.trim();
+    if (message !== "") {
+      return message;
+    }
+  }
+
+  return `${DEFAULT_DELETE_ERROR_MESSAGE} (status: ${statusCode})`;
+}
+
 export function RegisteredVolumesSection({
   seriesId,
   initialVolumes,
 }: RegisteredVolumesSectionProps) {
+  const router = useRouter();
   const [volumes, setVolumes] = useState<SeriesVolume[]>(() => sortSeriesVolumes(initialVolumes));
+  const [deletingByIsbn, setDeletingByIsbn] = useState<Record<string, boolean>>({});
+  const [deleteErrorMessage, setDeleteErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     setVolumes(sortSeriesVolumes(initialVolumes));
@@ -76,6 +104,53 @@ export function RegisteredVolumesSection({
     });
   }, [seriesId]);
 
+  const deleteVolume = async (isbn: string) => {
+    if (deletingByIsbn[isbn] === true) {
+      return;
+    }
+
+    const shouldDelete = window.confirm(`ISBN: ${isbn} を削除します。よろしいですか？`);
+    if (!shouldDelete) {
+      return;
+    }
+
+    setDeleteErrorMessage(null);
+    setDeletingByIsbn((currentValue) => ({
+      ...currentValue,
+      [isbn]: true,
+    }));
+
+    try {
+      const requestUrl = new URL(`/api/volumes/${isbn}`, API_BASE_URL);
+      const response = await fetch(requestUrl.toString(), {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const errorPayload = (await response.json().catch(() => null)) as unknown;
+        throw new Error(extractDeleteErrorMessage(errorPayload, response.status));
+      }
+
+      setVolumes((currentVolumes) =>
+        currentVolumes.filter((currentVolume) => currentVolume.isbn !== isbn)
+      );
+      publishLibraryRefreshSignal();
+      router.refresh();
+    } catch (error) {
+      if (error instanceof Error && error.message.trim() !== "") {
+        setDeleteErrorMessage(error.message);
+      } else {
+        setDeleteErrorMessage(DELETE_REQUEST_ERROR_MESSAGE);
+      }
+    } finally {
+      setDeletingByIsbn((currentValue) => {
+        const nextValue = { ...currentValue };
+        delete nextValue[isbn];
+        return nextValue;
+      });
+    }
+  };
+
   if (volumes.length === 0) {
     return null;
   }
@@ -83,20 +158,42 @@ export function RegisteredVolumesSection({
   return (
     <section className={styles.volumeSection}>
       <h2 className={styles.sectionTitle}>登録済み巻</h2>
+      {deleteErrorMessage !== null ? (
+        <p className={styles.deleteErrorMessage} role="alert">
+          {deleteErrorMessage}
+        </p>
+      ) : null}
       <ul className={styles.volumeList}>
-        {volumes.map((volume) => (
-          <li className={styles.volumeListItem} key={volume.isbn}>
-            <article className={styles.volumeCard}>
-              <p className={styles.volumeNumber}>
-                {volume.volume_number === null ? "巻数不明" : `${volume.volume_number}巻`}
-              </p>
-              <p className={styles.volumeMeta}>ISBN: {volume.isbn}</p>
-              <p className={styles.volumeMeta}>
-                登録日時: {formatRegisteredAt(volume.registered_at)}
-              </p>
-            </article>
-          </li>
-        ))}
+        {volumes.map((volume) => {
+          const isDeleting = deletingByIsbn[volume.isbn] === true;
+          const volumeLabel =
+            volume.volume_number === null ? "巻数不明" : `${volume.volume_number}巻`;
+
+          return (
+            <li className={styles.volumeListItem} key={volume.isbn}>
+              <article className={styles.volumeCard}>
+                <p className={styles.volumeNumber}>{volumeLabel}</p>
+                <p className={styles.volumeMeta}>ISBN: {volume.isbn}</p>
+                <p className={styles.volumeMeta}>
+                  登録日時: {formatRegisteredAt(volume.registered_at)}
+                </p>
+                <div className={styles.volumeActions}>
+                  <button
+                    aria-label={`${volumeLabel}（ISBN: ${volume.isbn}）を削除`}
+                    className={styles.volumeDeleteButton}
+                    disabled={isDeleting}
+                    onClick={() => {
+                      void deleteVolume(volume.isbn);
+                    }}
+                    type="button"
+                  >
+                    {isDeleting ? "削除中..." : "削除"}
+                  </button>
+                </div>
+              </article>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );
