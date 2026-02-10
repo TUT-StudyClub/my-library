@@ -17,6 +17,7 @@ def test_ndl_client_fetches_volume_metadata_from_ndl_api(monkeypatch):
           <dc:title>テスト作品 第12巻</dc:title>
           <dc:creator>テスト著者</dc:creator>
           <dc:publisher>テスト出版社</dc:publisher>
+          <dc:identifier>9780000000123</dc:identifier>
           <dcndl:volume>第12巻</dcndl:volume>
           <enclosure url="https://example.com/covers/test-12.jpg" />
         </item>
@@ -57,6 +58,7 @@ def test_ndl_client_fetches_cover_url_from_thumbnail_link_when_enclosure_is_miss
           <dc:title>サムネイル作品 第7巻</dc:title>
           <dc:creator>サムネイル著者</dc:creator>
           <dc:publisher>サムネイル出版社</dc:publisher>
+          <dc:identifier>9780000000123</dc:identifier>
           <dcndl:volume>第7巻</dcndl:volume>
           <link rel="http://ndl.go.jp/dcndl/terms/thumbnail" href="https://example.com/covers/thumb-7.jpg" />
         </item>
@@ -82,6 +84,7 @@ def test_ndl_client_returns_none_cover_url_when_only_non_cover_link_exists(monke
       <channel>
         <item>
           <dc:title>リンクのみ作品 第2巻</dc:title>
+          <dc:identifier>9780000000123</dc:identifier>
           <dcndl:volume>第2巻</dcndl:volume>
           <link rel="alternate" href="https://example.com/books/volume-2" />
         </item>
@@ -139,6 +142,7 @@ def test_ndl_client_retries_retryable_status_and_succeeds(monkeypatch):
       <channel>
         <item>
           <dc:title>リトライ作品 第1巻</dc:title>
+          <dc:identifier>9780000000123</dc:identifier>
         </item>
       </channel>
     </rss>
@@ -166,6 +170,112 @@ def test_ndl_client_retries_retryable_status_and_succeeds(monkeypatch):
         volume_number=1,
         cover_url=None,
     )
+
+
+def test_ndl_client_fetches_metadata_from_exact_isbn_item(monkeypatch):
+    """巻メタデータ取得は先頭ではなく一致ISBNの item を採用する."""
+    xml_text = """
+    <rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcndl="http://ndl.go.jp/dcndl/terms/">
+      <channel>
+        <item>
+          <dc:title>別作品 第3巻</dc:title>
+          <dc:creator>別著者</dc:creator>
+          <dc:identifier>9780000000999</dc:identifier>
+          <dcndl:volume>第3巻</dcndl:volume>
+        </item>
+        <item>
+          <dc:title>一致作品 第4巻</dc:title>
+          <dc:creator>一致著者</dc:creator>
+          <dc:publisher>一致出版社</dc:publisher>
+          <dc:identifier>9780000000123</dc:identifier>
+          <dcndl:volume>第4巻</dcndl:volume>
+        </item>
+      </channel>
+    </rss>
+    """.strip()
+
+    def fake_get(url: str, params: dict[str, Any], timeout: float):
+        return SimpleNamespace(status_code=200, text=xml_text)
+
+    monkeypatch.setattr(ndl_client.httpx, "get", fake_get)
+    client = ndl_client.NdlClient(base_url="https://example.com/ndl")
+
+    metadata = client.fetch_catalog_volume_metadata("9780000000123")
+
+    assert metadata == ndl_client.CatalogVolumeMetadata(
+        title="一致作品",
+        author="一致著者",
+        publisher="一致出版社",
+        volume_number=4,
+        cover_url=None,
+    )
+
+
+def test_ndl_client_returns_not_found_when_exact_isbn_item_does_not_exist(monkeypatch):
+    """一致ISBNの item が無い場合は 404 の統一エラーを返す."""
+    xml_text = """
+    <rss xmlns:dc="http://purl.org/dc/elements/1.1/">
+      <channel>
+        <item>
+          <dc:title>別作品 第1巻</dc:title>
+          <dc:identifier>9780000000999</dc:identifier>
+        </item>
+      </channel>
+    </rss>
+    """.strip()
+
+    def fake_get(url: str, params: dict[str, Any], timeout: float):
+        return SimpleNamespace(status_code=200, text=xml_text)
+
+    monkeypatch.setattr(ndl_client.httpx, "get", fake_get)
+    client = ndl_client.NdlClient(base_url="https://example.com/ndl")
+
+    with pytest.raises(ndl_client.NdlClientError) as error_info:
+        client.fetch_catalog_volume_metadata("9780000000123")
+
+    assert error_info.value.status_code == 404
+    assert error_info.value.to_http_exception_detail() == {
+        "code": "CATALOG_ITEM_NOT_FOUND",
+        "message": "Catalog item not found",
+        "details": {
+            "isbn": "9780000000123",
+            "upstream": "NDL Search",
+            "externalFailure": False,
+        },
+    }
+
+
+def test_ndl_client_returns_not_found_when_item_has_no_isbn(monkeypatch):
+    """Item にISBNが無い場合は 404 の統一エラーを返す."""
+    xml_text = """
+    <rss xmlns:dc="http://purl.org/dc/elements/1.1/">
+      <channel>
+        <item>
+          <dc:title>識別子欠損作品 第1巻</dc:title>
+        </item>
+      </channel>
+    </rss>
+    """.strip()
+
+    def fake_get(url: str, params: dict[str, Any], timeout: float):
+        return SimpleNamespace(status_code=200, text=xml_text)
+
+    monkeypatch.setattr(ndl_client.httpx, "get", fake_get)
+    client = ndl_client.NdlClient(base_url="https://example.com/ndl")
+
+    with pytest.raises(ndl_client.NdlClientError) as error_info:
+        client.fetch_catalog_volume_metadata("9780000000123")
+
+    assert error_info.value.status_code == 404
+    assert error_info.value.to_http_exception_detail() == {
+        "code": "CATALOG_ITEM_NOT_FOUND",
+        "message": "Catalog item not found",
+        "details": {
+            "isbn": "9780000000123",
+            "upstream": "NDL Search",
+            "externalFailure": False,
+        },
+    }
 
 
 def test_ndl_client_converts_communication_error_to_external_failure(monkeypatch):
