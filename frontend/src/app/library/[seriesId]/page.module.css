@@ -42,7 +42,83 @@
 .seriesId {
   color: #475569;
   font-size: 0.95rem;
+  margin: 0 0 12px;
+}
+
+.seriesMetaList {
+  display: grid;
+  gap: 8px;
   margin: 0;
+}
+
+.seriesMetaRow {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+}
+
+.seriesMetaLabel {
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin: 0;
+  min-width: 48px;
+}
+
+.seriesMetaValue {
+  color: #1e293b;
+  font-size: 0.92rem;
+  margin: 0;
+}
+
+.volumeSection {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.sectionTitle {
+  font-size: 1.08rem;
+  font-weight: 700;
+  margin: 0 0 14px;
+}
+
+.volumeList {
+  display: grid;
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.volumeListItem {
+  margin: 0;
+}
+
+.volumeCard {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.volumeNumber {
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+
+.volumeMeta {
+  color: #334155;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.volumeMeta + .volumeMeta {
+  margin-top: 4px;
 }
 
 .placeholderPanel,
@@ -56,7 +132,7 @@
   flex-direction: column;
   gap: 12px;
   justify-content: center;
-  min-height: 180px;
+  min-height: 140px;
   padding: 20px;
   text-align: center;
 }
@@ -87,4 +163,11 @@
   font-size: 0.85rem;
   font-weight: 600;
   padding: 8px 14px;
+}
+
+@media (max-width: 640px) {
+  .header,
+  .volumeSection {
+    padding: 16px;
+  }
 }
