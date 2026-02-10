@@ -238,23 +238,54 @@ function extractRegisteredVolume(payload: unknown): SeriesVolume | null {
   };
 }
 
-function isSeriesCandidate(value: unknown): value is SeriesCandidate {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "title" in value &&
-    typeof value.title === "string" &&
-    "author" in value &&
-    (typeof value.author === "string" || value.author === null) &&
-    "publisher" in value &&
-    (typeof value.publisher === "string" || value.publisher === null) &&
-    "isbn" in value &&
-    typeof value.isbn === "string" &&
-    "volume_number" in value &&
-    (typeof value.volume_number === "number" || value.volume_number === null) &&
-    "cover_url" in value &&
-    (typeof value.cover_url === "string" || value.cover_url === null)
-  );
+function parseSeriesCandidate(value: unknown): SeriesCandidate | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+
+  if (!("title" in value) || typeof value.title !== "string") {
+    return null;
+  }
+
+  if (!("author" in value) || (typeof value.author !== "string" && value.author !== null)) {
+    return null;
+  }
+
+  if (
+    !("publisher" in value) ||
+    (typeof value.publisher !== "string" && value.publisher !== null)
+  ) {
+    return null;
+  }
+
+  if (!("isbn" in value) || typeof value.isbn !== "string") {
+    return null;
+  }
+
+  if (
+    !("cover_url" in value) ||
+    (typeof value.cover_url !== "string" && value.cover_url !== null)
+  ) {
+    return null;
+  }
+
+  let volumeNumber: number | null = null;
+  if ("volume_number" in value) {
+    if (typeof value.volume_number === "number") {
+      volumeNumber = value.volume_number;
+    } else if (value.volume_number !== null) {
+      return null;
+    }
+  }
+
+  return {
+    title: value.title,
+    author: value.author,
+    publisher: value.publisher,
+    isbn: value.isbn,
+    volume_number: volumeNumber,
+    cover_url: value.cover_url,
+  };
 }
 
 function pickPreferredSeriesCandidate(
@@ -330,15 +361,25 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
         }
 
         const payload = (await response.json()) as unknown;
-        if (!Array.isArray(payload) || !payload.every(isSeriesCandidate)) {
+        if (!Array.isArray(payload)) {
           throw new Error(DEFAULT_FETCH_ERROR_MESSAGE);
+        }
+
+        const parsedCandidates: SeriesCandidate[] = [];
+        for (const candidate of payload) {
+          const parsedCandidate = parseSeriesCandidate(candidate);
+          if (parsedCandidate === null) {
+            throw new Error(DEFAULT_FETCH_ERROR_MESSAGE);
+          }
+
+          parsedCandidates.push(parsedCandidate);
         }
 
         if (isDisposed || abortController.signal.aborted) {
           return;
         }
 
-        setCandidates(mergeCandidatesByIsbn(payload));
+        setCandidates(mergeCandidatesByIsbn(parsedCandidates));
       } catch (error) {
         if (isDisposed || abortController.signal.aborted) {
           return;
