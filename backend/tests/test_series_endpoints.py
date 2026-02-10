@@ -318,3 +318,167 @@ def test_list_series_reads_existing_data_via_api(monkeypatch, tmp_path):
     listed_series = response.json()
     assert len(listed_series) == 2
     assert [item["title"] for item in listed_series] == ["作品B", "作品A"]
+
+
+def test_get_series_candidates_returns_unregistered_candidates(monkeypatch, tmp_path):
+    """作品詳細向け候補APIが未登録候補のみを返す."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    called = {}
+
+    def fake_search_catalog_by_keyword(q: str, limit: int) -> list[main.CatalogSearchCandidate]:
+        called.update({"q": q, "limit": limit})
+        return [
+            main.CatalogSearchCandidate(
+                title="候補作品",
+                author="候補著者",
+                publisher="候補出版社",
+                isbn="9780000000001",
+                volume_number=1,
+                cover_url="https://example.com/covers/registered-isbn.jpg",
+                owned="unknown",
+            ),
+            main.CatalogSearchCandidate(
+                title="候補作品",
+                author="候補著者",
+                publisher="候補出版社",
+                isbn="9780000000099",
+                volume_number=1,
+                cover_url="https://example.com/covers/registered-volume-number.jpg",
+                owned="unknown",
+            ),
+            main.CatalogSearchCandidate(
+                title="候補作品",
+                author="候補著者",
+                publisher="候補出版社",
+                isbn="9780000000002",
+                volume_number=2,
+                cover_url="https://example.com/covers/candidate-2.jpg",
+                owned="unknown",
+            ),
+            main.CatalogSearchCandidate(
+                title="候補作品",
+                author="候補著者",
+                publisher="候補出版社",
+                isbn="9780000000002",
+                volume_number=None,
+                cover_url=None,
+                owned="unknown",
+            ),
+            main.CatalogSearchCandidate(
+                title="候補作品 特装版",
+                author="候補著者",
+                publisher="候補出版社",
+                isbn="9780000000003",
+                volume_number=3,
+                cover_url="https://example.com/covers/excluded-special-edition.jpg",
+                owned="unknown",
+            ),
+            main.CatalogSearchCandidate(
+                title="別作品",
+                author="別著者",
+                publisher="別出版社",
+                isbn="9780000000004",
+                volume_number=4,
+                cover_url="https://example.com/covers/other-series.jpg",
+                owned="unknown",
+            ),
+            main.CatalogSearchCandidate(
+                title="候補作品",
+                author=None,
+                publisher=None,
+                isbn="9780000000005",
+                volume_number=None,
+                cover_url=None,
+                owned="unknown",
+            ),
+            main.CatalogSearchCandidate(
+                title="候補作品",
+                author="候補著者",
+                publisher="候補出版社",
+                isbn=None,
+                volume_number=6,
+                cover_url="https://example.com/covers/no-isbn.jpg",
+                owned="unknown",
+            ),
+        ]
+
+    monkeypatch.setattr(main, "_search_catalog_by_keyword", fake_search_catalog_by_keyword)
+
+    with TestClient(main.app) as client:
+        with sqlite3.connect(db_path) as connection:
+            series_id = int(
+                connection.execute(
+                    """
+                    INSERT INTO series (title, author, publisher)
+                    VALUES (?, ?, ?);
+                    """,
+                    ("候補作品", "候補著者", "候補出版社"),
+                ).lastrowid
+            )
+            other_series_id = int(
+                connection.execute(
+                    """
+                    INSERT INTO series (title, author, publisher)
+                    VALUES (?, ?, ?);
+                    """,
+                    ("別作品", "別著者", "別出版社"),
+                ).lastrowid
+            )
+            connection.execute(
+                """
+                INSERT INTO volume (isbn, series_id, volume_number, cover_url)
+                VALUES (?, ?, ?, ?);
+                """,
+                ("9780000000001", series_id, 1, "https://example.com/covers/owned-1.jpg"),
+            )
+            connection.execute(
+                """
+                INSERT INTO volume (isbn, series_id, volume_number, cover_url)
+                VALUES (?, ?, ?, ?);
+                """,
+                ("9780000000006", other_series_id, 6, "https://example.com/covers/owned-6.jpg"),
+            )
+            connection.commit()
+
+        response = client.get(f"/api/series/{series_id}/candidates")
+
+    assert response.status_code == 200
+    assert called == {"q": "候補作品 候補著者 候補出版社", "limit": 100}
+    assert response.json() == [
+        {
+            "title": "候補作品",
+            "author": "候補著者",
+            "publisher": "候補出版社",
+            "isbn": "9780000000002",
+            "volume_number": 2,
+            "cover_url": "https://example.com/covers/candidate-2.jpg",
+        },
+        {
+            "title": "候補作品",
+            "author": None,
+            "publisher": None,
+            "isbn": "9780000000005",
+            "volume_number": None,
+            "cover_url": None,
+        },
+    ]
+
+
+def test_get_series_candidates_returns_not_found_when_series_does_not_exist(monkeypatch, tmp_path):
+    """未登録Seriesの候補取得で404の統一エラーを返す."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    with TestClient(main.app) as client:
+        response = client.get("/api/series/999999/candidates")
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "error": {
+            "code": "SERIES_NOT_FOUND",
+            "message": "Series not found",
+            "details": {"seriesId": 999999},
+        }
+    }
