@@ -122,8 +122,9 @@ class NdlClient:
 
     def fetch_catalog_volume_metadata(self, isbn: str) -> CatalogVolumeMetadata:
         """ISBNでNDL Searchを検索し、登録に必要な巻メタデータを返す."""
-        xml_text = self._fetch_xml(params={"isbn": isbn, "cnt": 1})
-        return _parse_catalog_volume_metadata(xml_text, isbn)
+        normalized_isbn = _normalize_identifier(isbn)
+        xml_text = self._fetch_xml(params={"isbn": normalized_isbn, "cnt": 1})
+        return _parse_catalog_volume_metadata(xml_text, normalized_isbn)
 
     def search_by_keyword(
         self, q: str, limit: int = 10, page: int = 1
@@ -429,6 +430,15 @@ def _extract_isbn(item: ET.Element) -> Optional[str]:
     return None
 
 
+def _find_item_by_isbn(root: ET.Element, normalized_isbn: str) -> Optional[ET.Element]:
+    """OpenSearch XML の item から一致ISBNを持つ要素を返す."""
+    for item in root.findall("./channel/item"):
+        if _extract_isbn(item) == normalized_isbn:
+            return item
+
+    return None
+
+
 def _extract_volume_number(text_value: Optional[str]) -> Optional[int]:
     """文字列から巻数として使える先頭の整数を抽出する."""
     if text_value is None:
@@ -506,7 +516,7 @@ def _parse_catalog_volume_metadata(xml_text: str, isbn: str) -> CatalogVolumeMet
             ),
         ) from error
 
-    item = root.find("./channel/item")
+    item = _find_item_by_isbn(root, isbn)
     if item is None:
         raise NdlClientError(
             status_code=404,
