@@ -1,7 +1,8 @@
 "use client";
 
+import Image, { type ImageLoaderProps } from "next/image";
 import Link from "next/link";
-import { type FormEvent, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import styles from "./SearchTabPage.module.css";
 
 type CatalogSearchCandidate = {
@@ -217,6 +218,91 @@ function markCandidatesOwnedByIsbn(
 
     return currentCandidate;
   });
+}
+
+function passthroughImageLoader({ src }: ImageLoaderProps): string {
+  return src;
+}
+
+function normalizeCoverUrl(coverUrl: string | null): string | null {
+  const trimmedCoverUrl = coverUrl?.trim() ?? "";
+  if (trimmedCoverUrl === "") {
+    return null;
+  }
+
+  try {
+    const parsedCoverUrl = new URL(trimmedCoverUrl);
+    if (parsedCoverUrl.protocol !== "http:" && parsedCoverUrl.protocol !== "https:") {
+      return null;
+    }
+
+    return parsedCoverUrl.toString();
+  } catch {
+    return null;
+  }
+}
+
+function getRegisterButtonLabel(
+  candidate: CatalogSearchCandidate,
+  isCurrentCandidateRegistering: boolean
+): string {
+  if (isCurrentCandidateRegistering) {
+    return "登録中...";
+  }
+
+  if (candidate.owned === false && candidate.isbn !== null) {
+    return "登録する";
+  }
+
+  if (candidate.owned === true) {
+    return "登録済み";
+  }
+
+  if (candidate.isbn === null) {
+    return "登録不可";
+  }
+
+  return "登録保留";
+}
+
+type CandidateCoverProps = {
+  title: string;
+  coverUrl: string | null;
+};
+
+function CandidateCover({ title, coverUrl }: CandidateCoverProps) {
+  const normalizedCoverUrl = normalizeCoverUrl(coverUrl);
+  const [isImageLoadFailed, setIsImageLoadFailed] = useState(false);
+
+  useEffect(() => {
+    setIsImageLoadFailed(false);
+  }, [normalizedCoverUrl]);
+
+  const coverImageUrl =
+    normalizedCoverUrl !== null && !isImageLoadFailed ? normalizedCoverUrl : null;
+
+  return (
+    <div className={styles.resultCoverArea}>
+      {coverImageUrl !== null ? (
+        <Image
+          alt={`${title} の書影`}
+          className={styles.resultCoverImage}
+          fill
+          loader={passthroughImageLoader}
+          onError={() => {
+            setIsImageLoadFailed(true);
+          }}
+          sizes="(max-width: 640px) 72px, 92px"
+          src={coverImageUrl}
+          unoptimized
+        />
+      ) : (
+        <div aria-hidden="true" className={styles.resultCoverPlaceholder}>
+          書影なし
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function SearchTabPage() {
@@ -476,6 +562,15 @@ export function SearchTabPage() {
                     const candidateKey = getCandidateKey(candidate, index);
                     const canRegisterCandidate =
                       candidate.owned === false && candidate.isbn !== null;
+                    const isCurrentCandidateRegistering = registeringCandidateKey === candidateKey;
+                    const isRegisterDisabled =
+                      registeringCandidateKey !== null || !canRegisterCandidate;
+                    const ownedBadgeClassName =
+                      candidate.owned === true
+                        ? `${styles.ownedBadge} ${styles.ownedBadgeOwned}`
+                        : candidate.owned === false
+                          ? `${styles.ownedBadge} ${styles.ownedBadgeNotOwned}`
+                          : `${styles.ownedBadge} ${styles.ownedBadgeUnknown}`;
                     const registerFeedback = registerFeedbackByCandidateKey[candidateKey];
                     const registerFeedbackClassName =
                       registerFeedback === undefined
@@ -488,44 +583,64 @@ export function SearchTabPage() {
 
                     return (
                       <li className={styles.resultItem} key={candidateKey}>
-                        <p className={styles.resultTitle}>{candidate.title}</p>
-                        <p className={styles.statusText}>
-                          所持判定: {getCandidateOwnedLabel(candidate)}
-                        </p>
-                        <p className={styles.statusDetail}>
-                          {getRegistrationAvailabilityLabel(candidate)}
-                        </p>
-                        {canRegisterCandidate && (
-                          <p className={styles.registerActionRow}>
-                            <button
-                              className={styles.registerActionButton}
-                              disabled={registeringCandidateKey !== null}
-                              onClick={() => {
-                                void registerCandidate(candidate, candidateKey);
-                              }}
-                              type="button"
-                            >
-                              {registeringCandidateKey === candidateKey ? "登録中..." : "登録する"}
-                            </button>
-                          </p>
-                        )}
-                        {registerFeedbackClassName !== null && (
-                          <div
-                            aria-live="polite"
-                            className={registerFeedbackClassName}
-                            role={registerFeedback?.tone === "error" ? "alert" : "status"}
-                          >
-                            <p className={styles.registerFeedbackTitle}>{registerFeedback.title}</p>
-                            <p className={styles.registerFeedbackMessage}>
-                              {registerFeedback.message}
+                        <article className={styles.resultCard}>
+                          <CandidateCover coverUrl={candidate.cover_url} title={candidate.title} />
+                          <div className={styles.resultContent}>
+                            <div className={styles.resultHeading}>
+                              <h3 className={styles.resultTitle}>{candidate.title}</h3>
+                              <span className={ownedBadgeClassName}>
+                                {getCandidateOwnedLabel(candidate)}
+                              </span>
+                            </div>
+                            <dl className={styles.resultMetaList}>
+                              <div className={styles.resultMetaRow}>
+                                <dt className={styles.resultMetaLabel}>著者</dt>
+                                <dd className={styles.resultMetaValue}>
+                                  {candidate.author ?? "不明"}
+                                </dd>
+                              </div>
+                              <div className={styles.resultMetaRow}>
+                                <dt className={styles.resultMetaLabel}>出版社</dt>
+                                <dd className={styles.resultMetaValue}>
+                                  {candidate.publisher ?? "不明"}
+                                </dd>
+                              </div>
+                            </dl>
+                            <p className={styles.resultMeta}>
+                              ISBN: {candidate.isbn ?? "不明"} / 巻数:{" "}
+                              {candidate.volume_number ?? "不明"}
                             </p>
+                            <p className={styles.statusDetail}>
+                              {getRegistrationAvailabilityLabel(candidate)}
+                            </p>
+                            <p className={styles.registerActionRow}>
+                              <button
+                                className={styles.registerActionButton}
+                                disabled={isRegisterDisabled}
+                                onClick={() => {
+                                  void registerCandidate(candidate, candidateKey);
+                                }}
+                                type="button"
+                              >
+                                {getRegisterButtonLabel(candidate, isCurrentCandidateRegistering)}
+                              </button>
+                            </p>
+                            {registerFeedbackClassName !== null && (
+                              <div
+                                aria-live="polite"
+                                className={registerFeedbackClassName}
+                                role={registerFeedback?.tone === "error" ? "alert" : "status"}
+                              >
+                                <p className={styles.registerFeedbackTitle}>
+                                  {registerFeedback.title}
+                                </p>
+                                <p className={styles.registerFeedbackMessage}>
+                                  {registerFeedback.message}
+                                </p>
+                              </div>
+                            )}
                           </div>
-                        )}
-                        <p className={styles.resultMeta}>
-                          著者: {candidate.author ?? "不明"} / 出版社:{" "}
-                          {candidate.publisher ?? "不明"} / ISBN: {candidate.isbn ?? "不明"} / 巻数:{" "}
-                          {candidate.volume_number ?? "不明"}
-                        </p>
+                        </article>
                       </li>
                     );
                   })}
