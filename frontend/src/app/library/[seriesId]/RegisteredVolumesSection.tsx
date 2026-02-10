@@ -9,6 +9,7 @@ import styles from "./page.module.css";
 
 type RegisteredVolumesSectionProps = {
   seriesId: string;
+  seriesTitle: string;
   initialVolumes: SeriesVolume[];
 };
 
@@ -87,8 +88,13 @@ function extractDeletedIsbn(payload: unknown): string | null {
   return null;
 }
 
+function formatVolumeLabel(volumeNumber: number | null): string {
+  return volumeNumber === null ? "巻数不明" : `${volumeNumber}巻`;
+}
+
 export function RegisteredVolumesSection({
   seriesId,
+  seriesTitle,
   initialVolumes,
 }: RegisteredVolumesSectionProps) {
   const router = useRouter();
@@ -111,13 +117,22 @@ export function RegisteredVolumesSection({
     });
   }, [seriesId]);
 
-  const deleteVolume = async (isbn: string) => {
+  const deleteVolume = async (targetVolume: SeriesVolume) => {
+    const isbn = targetVolume.isbn;
     if (deletingIsbnSetRef.current.has(isbn)) {
       return;
     }
     deletingIsbnSetRef.current.add(isbn);
 
-    const shouldDelete = window.confirm(`ISBN: ${isbn} を削除します。よろしいですか？`);
+    const targetSeriesTitle = seriesTitle.trim() === "" ? "この作品" : seriesTitle.trim();
+    const shouldDelete = window.confirm(
+      [
+        "以下の巻を削除します。よろしいですか？",
+        `シリーズ: ${targetSeriesTitle}`,
+        `巻数: ${formatVolumeLabel(targetVolume.volume_number)}`,
+        `ISBN: ${isbn}`,
+      ].join("\n")
+    );
     if (!shouldDelete) {
       deletingIsbnSetRef.current.delete(isbn);
       return;
@@ -217,8 +232,7 @@ export function RegisteredVolumesSection({
       <ul className={styles.volumeList}>
         {volumes.map((volume) => {
           const isDeleting = deletingByIsbn[volume.isbn] === true;
-          const volumeLabel =
-            volume.volume_number === null ? "巻数不明" : `${volume.volume_number}巻`;
+          const volumeLabel = formatVolumeLabel(volume.volume_number);
 
           return (
             <li className={styles.volumeListItem} key={volume.isbn}>
@@ -234,7 +248,7 @@ export function RegisteredVolumesSection({
                     className={styles.volumeDeleteButton}
                     disabled={isDeleting}
                     onClick={() => {
-                      void deleteVolume(volume.isbn);
+                      void deleteVolume(volume);
                     }}
                     type="button"
                   >
