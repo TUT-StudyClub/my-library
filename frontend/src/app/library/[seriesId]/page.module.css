@@ -123,6 +123,24 @@
   padding: 14px;
 }
 
+.candidateCardInteractive {
+  cursor: pointer;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.candidateCardInteractive:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.candidateCardInteractive:focus-visible {
+  border-color: #334155;
+  box-shadow: 0 0 0 3px rgba(51, 65, 85, 0.2);
+  outline: none;
+}
+
 .candidateTitle {
   color: #0f172a;
   font-size: 0.95rem;
@@ -232,6 +250,86 @@
   padding: 8px 14px;
 }
 
+.candidateModalOverlay {
+  align-items: center;
+  background: rgba(15, 23, 42, 0.6);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 16px;
+  position: fixed;
+  z-index: 1000;
+}
+
+.candidateModal {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 16px;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.2);
+  max-height: min(80vh, 700px);
+  overflow-y: auto;
+  padding: 18px;
+  width: min(620px, 100%);
+}
+
+.candidateModalHeader {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.candidateModalTitle {
+  color: #0f172a;
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.candidateModalCloseButton {
+  appearance: none;
+  background: #0f172a;
+  border: none;
+  border-radius: 9999px;
+  color: #f8fafc;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 8px 14px;
+}
+
+.candidateModalMetaList {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.candidateModalMetaRow {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.candidateModalMetaLabel {
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.candidateModalMetaValue {
+  color: #1e293b;
+  font-size: 0.9rem;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.candidateModalCoverLink {
+  color: #0369a1;
+  text-decoration: underline;
+}
+
 @media (max-width: 640px) {
   .header,
   .volumeSection {
@@ -240,5 +338,14 @@
 
   .candidateList {
     grid-auto-columns: minmax(190px, 72vw);
+  }
+
+  .candidateModal {
+    padding: 16px;
+  }
+
+  .candidateModalHeader {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
