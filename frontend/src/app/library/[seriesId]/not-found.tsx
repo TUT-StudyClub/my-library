@@ -7,10 +7,10 @@ export default function SeriesDetailNotFoundPage() {
       <div className={styles.container}>
         <header className={styles.header}>
           <h1 className={styles.title}>シリーズ詳細</h1>
-          <p className={styles.seriesId}>404 Not Found</p>
+          <p className={styles.seriesId}>状態: 404 Not Found</p>
         </header>
 
-        <section className={styles.errorPanel}>
+        <section aria-live="polite" className={styles.errorPanel} role="status">
           <p className={styles.errorText}>指定されたシリーズが見つかりません。</p>
           <p className={styles.backLinkWrapper}>
             <Link className={styles.backLink} href="/library">
