@@ -144,6 +144,87 @@ def test_insert_rejects_duplicate_isbn(monkeypatch, tmp_path):
             )
 
 
+def test_insert_rejects_duplicate_series_metadata(monkeypatch, tmp_path):
+    """同一メタデータの Series は 2回登録できない."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    initialize_database()
+
+    with connect() as connection:
+        connection.execute(
+            "INSERT INTO series (title, author, publisher) VALUES (?, ?, ?);",
+            ("重複作品", None, None),
+        )
+
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "INSERT INTO series (title, author, publisher) VALUES (?, ?, ?);",
+                ("重複作品", "", ""),
+            )
+
+
+def test_initialize_database_merges_duplicate_series_before_unique_index(monkeypatch, tmp_path):
+    """重複 series が存在しても初期化時に統合され、volume が寄せ直される."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    with sqlite3.connect(db_path) as connection:
+        connection.executescript("""
+            CREATE TABLE series (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                author TEXT,
+                publisher TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE volume (
+                isbn TEXT PRIMARY KEY,
+                series_id INTEGER NOT NULL,
+                volume_number INTEGER,
+                cover_url TEXT,
+                registered_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY(series_id) REFERENCES series(id) ON DELETE CASCADE
+            );
+
+            INSERT INTO series (title, author, publisher) VALUES ('統合作品', '統合著者', '統合出版社');
+            INSERT INTO series (title, author, publisher) VALUES ('統合作品', '統合著者', '統合出版社');
+
+            INSERT INTO volume (isbn, series_id, volume_number, cover_url)
+            VALUES ('9780000000010', 1, 1, NULL);
+            INSERT INTO volume (isbn, series_id, volume_number, cover_url)
+            VALUES ('9780000000011', 2, 2, NULL);
+            """)
+
+    initialize_database()
+
+    with connect() as connection:
+        series_rows = connection.execute(
+            """
+            SELECT id, title, author, publisher
+            FROM series
+            WHERE title = ? AND author = ? AND publisher = ?;
+            """,
+            ("統合作品", "統合著者", "統合出版社"),
+        ).fetchall()
+        assert len(series_rows) == 1
+
+        canonical_series_id = int(series_rows[0][0])
+        volume_series_ids = {int(row[0]) for row in connection.execute("""
+                SELECT series_id
+                FROM volume
+                WHERE isbn IN ('9780000000010', '9780000000011');
+                """).fetchall()}
+        assert volume_series_ids == {canonical_series_id}
+
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "INSERT INTO series (title, author, publisher) VALUES (?, ?, ?);",
+                ("統合作品", "統合著者", "統合出版社"),
+            )
+
+
 def test_volume_requires_existing_series_via_foreign_key(monkeypatch, tmp_path):
     """Volume の series_id には既存 series.id の外部キー制約がある."""
     db_path = tmp_path / "library.db"
