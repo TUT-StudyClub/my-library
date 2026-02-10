@@ -319,7 +319,7 @@ export function SearchTabPage() {
   const activeSearchAbortControllerRef = useRef<AbortController | null>(null);
   const activeSearchRequestIdRef = useRef(0);
   const isSearchingRef = useRef(false);
-  const isRegisteringRef = useRef(false);
+  const inFlightRegisterIsbnSetRef = useRef(new Set<string>());
 
   const normalizedQuery = query.trim();
   const displayedQuery = executedQuery ?? "";
@@ -441,13 +441,13 @@ export function SearchTabPage() {
       candidate.owned !== false ||
       candidate.isbn === null ||
       registeringCandidateKey !== null ||
-      isRegisteringRef.current
+      inFlightRegisterIsbnSetRef.current.has(candidate.isbn)
     ) {
       return;
     }
 
     const requestIsbn = candidate.isbn;
-    isRegisteringRef.current = true;
+    inFlightRegisterIsbnSetRef.current.add(requestIsbn);
     setRegisteringCandidateKey(candidateKey);
     setRegisterFeedbackByCandidateKey((currentValue) => {
       const nextValue = { ...currentValue };
@@ -525,7 +525,7 @@ export function SearchTabPage() {
         },
       }));
     } finally {
-      isRegisteringRef.current = false;
+      inFlightRegisterIsbnSetRef.current.delete(requestIsbn);
       setRegisteringCandidateKey((currentValue) =>
         currentValue === candidateKey ? null : currentValue
       );
