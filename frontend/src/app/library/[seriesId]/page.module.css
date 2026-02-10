@@ -250,32 +250,6 @@
   padding: 8px 14px;
 }
 
-.candidateActionMessage {
-  border-radius: 10px;
-  font-size: 0.86rem;
-  line-height: 1.5;
-  margin: 0 0 12px;
-  padding: 8px 10px;
-}
-
-.candidateActionMessageSuccess {
-  background: #dcfce7;
-  border: 1px solid #86efac;
-  color: #166534;
-}
-
-.candidateActionMessageInfo {
-  background: #dbeafe;
-  border: 1px solid #93c5fd;
-  color: #1d4ed8;
-}
-
-.candidateActionMessageError {
-  background: #fee2e2;
-  border: 1px solid #fecaca;
-  color: #7f1d1d;
-}
-
 .candidateModalOverlay {
   align-items: center;
   background: rgba(15, 23, 42, 0.6);
@@ -351,18 +325,6 @@
   margin: 14px 0 0;
 }
 
-.candidateModalErrorMessage {
-  background: #fee2e2;
-  border: 1px solid #fecaca;
-  border-radius: 10px;
-  color: #7f1d1d;
-  font-size: 0.86rem;
-  line-height: 1.5;
-  margin: 10px 0 0;
-  overflow-wrap: anywhere;
-  padding: 8px 10px;
-}
-
 .candidateModalActions {
   display: flex;
   gap: 10px;
@@ -397,6 +359,61 @@
   opacity: 0.7;
 }
 
+.registerResultToast {
+  bottom: 18px;
+  border-radius: 12px;
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.24);
+  max-width: min(380px, calc(100vw - 36px));
+  padding: 12px 12px 10px;
+  position: fixed;
+  right: 18px;
+  z-index: 1100;
+}
+
+.registerResultToastSuccess {
+  background: #dcfce7;
+  border: 1px solid #86efac;
+  color: #166534;
+}
+
+.registerResultToastInfo {
+  background: #dbeafe;
+  border: 1px solid #93c5fd;
+  color: #1d4ed8;
+}
+
+.registerResultToastError {
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  color: #7f1d1d;
+}
+
+.registerResultToastTitle {
+  font-size: 0.86rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.registerResultToastMessage {
+  font-size: 0.84rem;
+  line-height: 1.5;
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.registerResultToastCloseButton {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+  margin-top: 8px;
+  padding: 0;
+  text-decoration: underline;
+}
+
 @media (max-width: 640px) {
   .header,
   .volumeSection {
@@ -418,5 +435,12 @@
 
   .candidateModalActions {
     flex-direction: column;
+  }
+
+  .registerResultToast {
+    bottom: 12px;
+    left: 12px;
+    max-width: unset;
+    right: 12px;
   }
 }
