@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { buildUserFacingApiErrorMessage } from "@/lib/apiError";
+import { buildUserFacingApiErrorMessage, extractApiErrorCode } from "@/lib/apiError";
 import { publishLibraryRefreshSignal } from "@/lib/libraryRefreshSignal";
 import { type SeriesVolume, subscribeSeriesVolumeRegistered } from "@/lib/seriesVolumeSignal";
 import styles from "./page.module.css";
@@ -137,6 +137,20 @@ export function RegisteredVolumesSection({
 
       if (!response.ok) {
         const errorPayload = (await response.json().catch(() => null)) as unknown;
+        const errorCode = extractApiErrorCode(errorPayload);
+        if (response.status === 404 && errorCode === "VOLUME_NOT_FOUND") {
+          setVolumes((currentVolumes) =>
+            currentVolumes.filter((currentVolume) => currentVolume.isbn !== isbn)
+          );
+          setDeleteResult({
+            tone: "success",
+            message: `ISBN: ${isbn} は既に削除済みです。`,
+          });
+          publishLibraryRefreshSignal();
+          router.refresh();
+          return;
+        }
+
         throw new Error(
           buildUserFacingApiErrorMessage({
             errorPayload,
