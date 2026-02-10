@@ -15,6 +15,11 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8
 const DEFAULT_DELETE_ERROR_MESSAGE = "巻の削除に失敗しました。";
 const DELETE_REQUEST_ERROR_MESSAGE = "削除リクエストの送信に失敗しました。";
 
+type DeleteResult = {
+  tone: "success" | "error";
+  message: string;
+};
+
 function sortSeriesVolumes(volumes: SeriesVolume[]): SeriesVolume[] {
   return [...volumes].sort((leftVolume, rightVolume) => {
     const leftUnknownOrder = leftVolume.volume_number === null ? 1 : 0;
@@ -81,6 +86,25 @@ function extractDeleteErrorMessage(errorPayload: unknown, statusCode: number): s
   return `${DEFAULT_DELETE_ERROR_MESSAGE} (status: ${statusCode})`;
 }
 
+function extractDeletedIsbn(payload: unknown): string | null {
+  if (
+    typeof payload === "object" &&
+    payload !== null &&
+    "deleted" in payload &&
+    typeof payload.deleted === "object" &&
+    payload.deleted !== null &&
+    "isbn" in payload.deleted &&
+    typeof payload.deleted.isbn === "string"
+  ) {
+    const normalizedIsbn = payload.deleted.isbn.trim();
+    if (normalizedIsbn !== "") {
+      return normalizedIsbn;
+    }
+  }
+
+  return null;
+}
+
 export function RegisteredVolumesSection({
   seriesId,
   initialVolumes,
@@ -88,7 +112,7 @@ export function RegisteredVolumesSection({
   const router = useRouter();
   const [volumes, setVolumes] = useState<SeriesVolume[]>(() => sortSeriesVolumes(initialVolumes));
   const [deletingByIsbn, setDeletingByIsbn] = useState<Record<string, boolean>>({});
-  const [deleteErrorMessage, setDeleteErrorMessage] = useState<string | null>(null);
+  const [deleteResult, setDeleteResult] = useState<DeleteResult | null>(null);
 
   useEffect(() => {
     setVolumes(sortSeriesVolumes(initialVolumes));
@@ -114,7 +138,7 @@ export function RegisteredVolumesSection({
       return;
     }
 
-    setDeleteErrorMessage(null);
+    setDeleteResult(null);
     setDeletingByIsbn((currentValue) => ({
       ...currentValue,
       [isbn]: true,
@@ -131,16 +155,28 @@ export function RegisteredVolumesSection({
         throw new Error(extractDeleteErrorMessage(errorPayload, response.status));
       }
 
+      const successPayload = (await response.json().catch(() => null)) as unknown;
+      const deletedIsbn = extractDeletedIsbn(successPayload) ?? isbn;
       setVolumes((currentVolumes) =>
         currentVolumes.filter((currentVolume) => currentVolume.isbn !== isbn)
       );
+      setDeleteResult({
+        tone: "success",
+        message: `ISBN: ${deletedIsbn} を削除しました。`,
+      });
       publishLibraryRefreshSignal();
       router.refresh();
     } catch (error) {
       if (error instanceof Error && error.message.trim() !== "") {
-        setDeleteErrorMessage(error.message);
+        setDeleteResult({
+          tone: "error",
+          message: error.message,
+        });
       } else {
-        setDeleteErrorMessage(DELETE_REQUEST_ERROR_MESSAGE);
+        setDeleteResult({
+          tone: "error",
+          message: DELETE_REQUEST_ERROR_MESSAGE,
+        });
       }
     } finally {
       setDeletingByIsbn((currentValue) => {
@@ -158,9 +194,16 @@ export function RegisteredVolumesSection({
   return (
     <section className={styles.volumeSection}>
       <h2 className={styles.sectionTitle}>登録済み巻</h2>
-      {deleteErrorMessage !== null ? (
-        <p className={styles.deleteErrorMessage} role="alert">
-          {deleteErrorMessage}
+      {deleteResult !== null ? (
+        <p
+          className={
+            deleteResult.tone === "success"
+              ? styles.deleteSuccessMessage
+              : styles.deleteErrorMessage
+          }
+          role={deleteResult.tone === "error" ? "alert" : "status"}
+        >
+          {deleteResult.message}
         </p>
       ) : null}
       <ul className={styles.volumeList}>
