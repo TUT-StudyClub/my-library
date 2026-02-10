@@ -138,6 +138,7 @@ export default async function SeriesDetailPage({ params }: SeriesDetailPageProps
           <RegisteredVolumesSection
             initialVolumes={seriesDetail.volumes}
             seriesId={normalizedSeriesId}
+            seriesTitle={seriesDetail.title}
           />
         </div>
       </div>
