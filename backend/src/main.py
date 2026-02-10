@@ -51,13 +51,13 @@ DEFAULT_ERROR_CODE_BY_STATUS = {
     status.HTTP_504_GATEWAY_TIMEOUT: "GATEWAY_TIMEOUT",
 }
 SERIES_CANDIDATES_SEARCH_LIMIT = 100
-SERIES_CANDIDATE_EXCLUSION_KEYWORDS = (
+SERIES_CANDIDATE_EXCLUSION_TERMS = [
     "特装版",
     "電子版",
     "電子書籍",
-    "kindle",
-    "[kindle版]",
-)
+    "Kindle",
+    "[Kindle版]",
+]
 
 
 def _build_error_response(
@@ -402,6 +402,22 @@ def _normalize_text_for_match(raw_text: Optional[str]) -> Optional[str]:
     return compact_text
 
 
+def _build_series_candidate_exclusion_keywords() -> tuple[str, ...]:
+    """除外語リストから判定用キーワードを構築する."""
+    normalized_keywords: list[str] = []
+    seen_keywords: set[str] = set()
+
+    for exclusion_term in SERIES_CANDIDATE_EXCLUSION_TERMS:
+        normalized_term = _normalize_text_for_match(exclusion_term)
+        if normalized_term is None or normalized_term in seen_keywords:
+            continue
+
+        seen_keywords.add(normalized_term)
+        normalized_keywords.append(normalized_term)
+
+    return tuple(normalized_keywords)
+
+
 def _is_metadata_match(expected_value: Optional[str], candidate_value: Optional[str]) -> bool:
     """シリーズのメタデータが候補と整合するか判定する."""
     normalized_expected = _normalize_text_for_match(expected_value)
@@ -449,8 +465,13 @@ def _build_series_candidates_query(
     return " ".join(query_parts)
 
 
-def _contains_exclusion_keyword(candidate: CatalogSearchCandidate) -> bool:
+def _contains_exclusion_keyword(
+    candidate: CatalogSearchCandidate, exclusion_keywords: Sequence[str]
+) -> bool:
     """版違いなどの除外語に該当する候補か判定する."""
+    if len(exclusion_keywords) == 0:
+        return False
+
     normalized_text_parts = [
         normalized_text
         for normalized_text in (
@@ -464,10 +485,7 @@ def _contains_exclusion_keyword(candidate: CatalogSearchCandidate) -> bool:
         return False
 
     searchable_text = " ".join(normalized_text_parts)
-    return any(
-        exclusion_keyword in searchable_text
-        for exclusion_keyword in SERIES_CANDIDATE_EXCLUSION_KEYWORDS
-    )
+    return any(exclusion_keyword in searchable_text for exclusion_keyword in exclusion_keywords)
 
 
 def _pick_preferred_candidate(
@@ -528,6 +546,7 @@ def _extract_unregistered_series_candidates(
     registered_volume_numbers: set[int],
 ) -> list[BookDTO]:
     """シリーズ候補から未登録のみを抽出する."""
+    exclusion_keywords = _build_series_candidate_exclusion_keywords()
     deduplicated_candidates_by_isbn: dict[str, CatalogSearchCandidate] = {}
 
     for candidate in candidates:
@@ -552,7 +571,7 @@ def _extract_unregistered_series_candidates(
         if not _is_metadata_match(series_publisher, candidate.publisher):
             continue
 
-        if _contains_exclusion_keyword(candidate):
+        if _contains_exclusion_keyword(candidate, exclusion_keywords):
             continue
 
         existing_candidate = deduplicated_candidates_by_isbn.get(candidate.isbn)
