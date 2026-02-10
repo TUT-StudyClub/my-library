@@ -65,6 +65,48 @@ function isSeriesCandidate(value: unknown): value is SeriesCandidate {
   );
 }
 
+function pickPreferredSeriesCandidate(
+  existingCandidate: SeriesCandidate,
+  incomingCandidate: SeriesCandidate
+): SeriesCandidate {
+  if (existingCandidate.volume_number === null && incomingCandidate.volume_number !== null) {
+    return incomingCandidate;
+  }
+
+  if (
+    existingCandidate.volume_number !== null &&
+    incomingCandidate.volume_number !== null &&
+    incomingCandidate.volume_number < existingCandidate.volume_number
+  ) {
+    return incomingCandidate;
+  }
+
+  if (existingCandidate.cover_url === null && incomingCandidate.cover_url !== null) {
+    return incomingCandidate;
+  }
+
+  return existingCandidate;
+}
+
+function mergeCandidatesByIsbn(candidates: SeriesCandidate[]): SeriesCandidate[] {
+  const mergedCandidatesByIsbn = new Map<string, SeriesCandidate>();
+
+  for (const candidate of candidates) {
+    const existingCandidate = mergedCandidatesByIsbn.get(candidate.isbn);
+    if (existingCandidate === undefined) {
+      mergedCandidatesByIsbn.set(candidate.isbn, candidate);
+      continue;
+    }
+
+    mergedCandidatesByIsbn.set(
+      candidate.isbn,
+      pickPreferredSeriesCandidate(existingCandidate, candidate)
+    );
+  }
+
+  return Array.from(mergedCandidatesByIsbn.values());
+}
+
 export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionProps) {
   const [candidates, setCandidates] = useState<SeriesCandidate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -91,10 +133,7 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
         }
 
         const payload = (await response.json()) as unknown;
-        if (
-          !Array.isArray(payload) ||
-          !payload.every((candidate) => isSeriesCandidate(candidate))
-        ) {
+        if (!Array.isArray(payload) || !payload.every(isSeriesCandidate)) {
           throw new Error(DEFAULT_FETCH_ERROR_MESSAGE);
         }
 
@@ -102,7 +141,7 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
           return;
         }
 
-        setCandidates(payload);
+        setCandidates(mergeCandidatesByIsbn(payload));
       } catch (error) {
         if (isDisposed || abortController.signal.aborted) {
           return;
