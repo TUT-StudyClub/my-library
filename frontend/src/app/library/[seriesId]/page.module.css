@@ -146,6 +146,19 @@
   margin: 0;
 }
 
+.errorDetail {
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  color: #7f1d1d;
+  font-size: 0.85rem;
+  margin: 0;
+  max-width: 640px;
+  overflow-wrap: anywhere;
+  padding: 8px 10px;
+  text-align: left;
+}
+
 .errorActions {
   align-items: center;
   display: flex;
