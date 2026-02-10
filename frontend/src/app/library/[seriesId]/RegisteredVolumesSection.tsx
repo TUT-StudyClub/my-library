@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { publishLibraryRefreshSignal } from "@/lib/libraryRefreshSignal";
 import { type SeriesVolume, subscribeSeriesVolumeRegistered } from "@/lib/seriesVolumeSignal";
 import styles from "./page.module.css";
@@ -113,6 +113,7 @@ export function RegisteredVolumesSection({
   const [volumes, setVolumes] = useState<SeriesVolume[]>(() => sortSeriesVolumes(initialVolumes));
   const [deletingByIsbn, setDeletingByIsbn] = useState<Record<string, boolean>>({});
   const [deleteResult, setDeleteResult] = useState<DeleteResult | null>(null);
+  const deletingIsbnSetRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     setVolumes(sortSeriesVolumes(initialVolumes));
@@ -129,12 +130,14 @@ export function RegisteredVolumesSection({
   }, [seriesId]);
 
   const deleteVolume = async (isbn: string) => {
-    if (deletingByIsbn[isbn] === true) {
+    if (deletingIsbnSetRef.current.has(isbn)) {
       return;
     }
+    deletingIsbnSetRef.current.add(isbn);
 
     const shouldDelete = window.confirm(`ISBN: ${isbn} を削除します。よろしいですか？`);
     if (!shouldDelete) {
+      deletingIsbnSetRef.current.delete(isbn);
       return;
     }
 
@@ -181,6 +184,7 @@ export function RegisteredVolumesSection({
         });
       }
     } finally {
+      deletingIsbnSetRef.current.delete(isbn);
       setDeletingByIsbn((currentValue) => {
         const nextValue = { ...currentValue };
         delete nextValue[isbn];
