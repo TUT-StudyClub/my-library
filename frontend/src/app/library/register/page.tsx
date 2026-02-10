@@ -416,13 +416,13 @@ export default function RegisterPage() {
           isbn: requestIsbn,
         }),
       });
-      latestProcessedIsbnRef.current = requestIsbn;
-      latestProcessedAtMillisecondsRef.current = Date.now();
 
       if (!response.ok) {
         const errorPayload = (await response.json().catch(() => null)) as unknown;
         const registerErrorCode = extractRegisterErrorCode(errorPayload);
         if (response.status === 409 && registerErrorCode === "VOLUME_ALREADY_EXISTS") {
+          latestProcessedIsbnRef.current = requestIsbn;
+          latestProcessedAtMillisecondsRef.current = Date.now();
           setRegisterRequestStatus("alreadyExists");
           setRegisterRequestMessage(REGISTER_ALREADY_EXISTS_MESSAGE);
           return;
@@ -441,6 +441,8 @@ export default function RegisterPage() {
 
       const successPayload = (await response.json().catch(() => null)) as unknown;
       const registeredIsbn = extractRegisteredIsbn(successPayload) ?? requestIsbn;
+      latestProcessedIsbnRef.current = requestIsbn;
+      latestProcessedAtMillisecondsRef.current = Date.now();
       setRegisterRequestStatus("success");
       setRegisterRequestMessage(`${REGISTER_SUCCESS_MESSAGE}（ISBN: ${registeredIsbn}）`);
       publishLibraryRefreshSignal();
