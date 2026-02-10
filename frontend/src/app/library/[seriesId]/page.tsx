@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { SeriesCandidatesSection } from "./SeriesCandidatesSection";
 import styles from "./page.module.css";
 
 type SeriesVolume = {
@@ -7,15 +8,6 @@ type SeriesVolume = {
   volume_number: number | null;
   cover_url: string | null;
   registered_at: string;
-};
-
-type SeriesCandidate = {
-  title: string;
-  author: string | null;
-  publisher: string | null;
-  isbn: string;
-  volume_number: number | null;
-  cover_url: string | null;
 };
 
 type SeriesDetail = {
@@ -34,7 +26,6 @@ type SeriesDetailPageProps = {
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const DEFAULT_FETCH_ERROR_MESSAGE = "シリーズ詳細の取得に失敗しました。";
-const DEFAULT_CANDIDATE_FETCH_ERROR_MESSAGE = "未登録候補の取得に失敗しました。";
 
 function extractErrorCode(errorPayload: unknown): string | null {
   if (
@@ -89,25 +80,6 @@ function isSeriesVolume(value: unknown): value is SeriesVolume {
   );
 }
 
-function isSeriesCandidate(value: unknown): value is SeriesCandidate {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "title" in value &&
-    typeof value.title === "string" &&
-    "author" in value &&
-    (typeof value.author === "string" || value.author === null) &&
-    "publisher" in value &&
-    (typeof value.publisher === "string" || value.publisher === null) &&
-    "isbn" in value &&
-    typeof value.isbn === "string" &&
-    "volume_number" in value &&
-    (typeof value.volume_number === "number" || value.volume_number === null) &&
-    "cover_url" in value &&
-    (typeof value.cover_url === "string" || value.cover_url === null)
-  );
-}
-
 function isSeriesDetail(value: unknown): value is SeriesDetail {
   return (
     typeof value === "object" &&
@@ -157,43 +129,13 @@ async function fetchSeriesDetail(seriesId: string): Promise<SeriesDetail> {
   return payload;
 }
 
-async function fetchSeriesCandidates(seriesId: string): Promise<SeriesCandidate[]> {
-  const requestUrl = new URL(`/api/series/${seriesId}/candidates`, API_BASE_URL);
-  const response = await fetch(requestUrl.toString(), { cache: "no-store" });
-
-  if (!response.ok) {
-    const errorPayload = (await response.json().catch(() => null)) as unknown;
-    const errorCode = extractErrorCode(errorPayload);
-    if (response.status === 404 || errorCode === "SERIES_NOT_FOUND") {
-      notFound();
-    }
-
-    const extractedMessage = extractErrorMessage(errorPayload, response.status);
-    if (extractedMessage === `${DEFAULT_FETCH_ERROR_MESSAGE} (status: ${response.status})`) {
-      throw new Error(`${DEFAULT_CANDIDATE_FETCH_ERROR_MESSAGE} (status: ${response.status})`);
-    }
-
-    throw new Error(extractedMessage);
-  }
-
-  const payload = (await response.json()) as unknown;
-  if (!Array.isArray(payload) || !payload.every((candidate) => isSeriesCandidate(candidate))) {
-    throw new Error(DEFAULT_CANDIDATE_FETCH_ERROR_MESSAGE);
-  }
-
-  return payload;
-}
-
 export default async function SeriesDetailPage({ params }: SeriesDetailPageProps) {
   const normalizedSeriesId = params.seriesId.trim();
   const isValidSeriesId = /^[1-9][0-9]*$/.test(normalizedSeriesId);
   if (!isValidSeriesId) {
     notFound();
   }
-  const [seriesDetail, seriesCandidates] = await Promise.all([
-    fetchSeriesDetail(normalizedSeriesId),
-    fetchSeriesCandidates(normalizedSeriesId),
-  ]);
+  const seriesDetail = await fetchSeriesDetail(normalizedSeriesId);
 
   return (
     <main className={styles.page}>
@@ -220,44 +162,7 @@ export default async function SeriesDetailPage({ params }: SeriesDetailPageProps
         </header>
 
         <div className={styles.volumeRows}>
-          <section className={styles.volumeSection}>
-            <h2 className={styles.sectionTitle}>未登録候補</h2>
-            {seriesCandidates.length === 0 ? (
-              <div aria-live="polite" className={styles.placeholderPanel} role="status">
-                <p className={styles.placeholderText}>未登録候補はありません。</p>
-              </div>
-            ) : (
-              <ul className={styles.candidateList}>
-                {seriesCandidates.map((candidate) => (
-                  <li className={styles.candidateListItem} key={candidate.isbn}>
-                    <article className={styles.volumeCard}>
-                      <h3 className={styles.candidateTitle}>{candidate.title}</h3>
-                      <p className={styles.volumeNumber}>
-                        {candidate.volume_number === null
-                          ? "巻数不明"
-                          : `${candidate.volume_number}巻`}
-                      </p>
-                      <dl className={styles.candidateMetaList}>
-                        <div className={styles.candidateMetaRow}>
-                          <dt className={styles.candidateMetaLabel}>著者</dt>
-                          <dd className={styles.candidateMetaValue}>
-                            {candidate.author ?? "不明"}
-                          </dd>
-                        </div>
-                        <div className={styles.candidateMetaRow}>
-                          <dt className={styles.candidateMetaLabel}>出版社</dt>
-                          <dd className={styles.candidateMetaValue}>
-                            {candidate.publisher ?? "不明"}
-                          </dd>
-                        </div>
-                      </dl>
-                      <p className={styles.volumeMeta}>ISBN: {candidate.isbn}</p>
-                    </article>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          <SeriesCandidatesSection seriesId={normalizedSeriesId} />
 
           <section className={styles.volumeSection}>
             <h2 className={styles.sectionTitle}>登録済み巻</h2>
