@@ -201,18 +201,64 @@
   margin: 0 0 10px;
 }
 
-.resultList {
+.resultRows {
+  display: grid;
+  gap: 16px;
+}
+
+.resultRowSection {
+  display: grid;
+  gap: 10px;
+}
+
+.resultRowHeader {
+  align-items: baseline;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.resultRowTitle {
+  color: #0f172a;
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.resultRowCount {
+  color: #64748b;
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.resultRowEmpty {
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  color: #475569;
+  font-size: 0.84rem;
+  margin: 0;
+  padding: 10px 12px;
+}
+
+.horizontalResultList {
   display: grid;
   gap: 12px;
+  grid-auto-columns: minmax(320px, 320px);
+  grid-auto-flow: column;
   list-style: none;
   margin: 0;
-  padding: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding: 0 0 8px;
+  scroll-snap-type: x proximity;
   text-align: left;
   width: 100%;
 }
 
 .resultItem {
   list-style: none;
+  scroll-snap-align: start;
 }
 
 .resultCard {
@@ -437,6 +483,10 @@
 
   .searchButton {
     width: 100%;
+  }
+
+  .horizontalResultList {
+    grid-auto-columns: minmax(280px, 86vw);
   }
 
   .resultCard {
