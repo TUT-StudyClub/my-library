@@ -316,6 +316,9 @@ export function SearchTabPage() {
   const [registerFeedbackByCandidateKey, setRegisterFeedbackByCandidateKey] = useState<
     Record<string, RegisterFeedback>
   >({});
+  const activeSearchAbortControllerRef = useRef<AbortController | null>(null);
+  const activeSearchRequestIdRef = useRef(0);
+  const isSearchingRef = useRef(false);
   const isRegisteringRef = useRef(false);
 
   const normalizedQuery = query.trim();
@@ -345,7 +348,24 @@ export function SearchTabPage() {
             ? `${styles.statePanel} ${styles.statePanelError}`
             : `${styles.statePanel} ${styles.statePanelIdle}`;
 
+  useEffect(() => {
+    return () => {
+      activeSearchAbortControllerRef.current?.abort();
+    };
+  }, []);
+
   const executeSearch = async (searchQuery: string) => {
+    if (isSearchingRef.current) {
+      return;
+    }
+
+    isSearchingRef.current = true;
+    const requestId = activeSearchRequestIdRef.current + 1;
+    activeSearchRequestIdRef.current = requestId;
+    activeSearchAbortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    activeSearchAbortControllerRef.current = abortController;
+
     setExecutedQuery(searchQuery);
     setIsLoading(true);
     setErrorMessage(null);
@@ -357,7 +377,7 @@ export function SearchTabPage() {
       requestUrl.searchParams.set("q", searchQuery);
       requestUrl.searchParams.set("limit", String(SEARCH_LIMIT));
 
-      const response = await fetch(requestUrl.toString());
+      const response = await fetch(requestUrl.toString(), { signal: abortController.signal });
       if (!response.ok) {
         const errorPayload = (await response.json().catch(() => null)) as unknown;
         throw new Error(extractSearchErrorMessage(errorPayload, response.status));
@@ -368,8 +388,16 @@ export function SearchTabPage() {
         throw new Error(DEFAULT_SEARCH_ERROR_MESSAGE);
       }
 
+      if (abortController.signal.aborted || activeSearchRequestIdRef.current !== requestId) {
+        return;
+      }
+
       setCandidates(payload as CatalogSearchCandidate[]);
     } catch (error) {
+      if (abortController.signal.aborted || activeSearchRequestIdRef.current !== requestId) {
+        return;
+      }
+
       setCandidates([]);
       if (error instanceof Error && error.message.trim() !== "") {
         setErrorMessage(error.message);
@@ -377,7 +405,15 @@ export function SearchTabPage() {
         setErrorMessage(DEFAULT_SEARCH_ERROR_MESSAGE);
       }
     } finally {
-      setIsLoading(false);
+      if (activeSearchRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      isSearchingRef.current = false;
+      activeSearchAbortControllerRef.current = null;
+      if (!abortController.signal.aborted) {
+        setIsLoading(false);
+      }
     }
   };
 
