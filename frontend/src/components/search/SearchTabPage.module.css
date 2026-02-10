@@ -189,16 +189,10 @@
   color: #991b1b;
 }
 
-.statusText {
-  color: #334155;
-  font-size: 0.95rem;
-  margin: 0 0 4px;
-}
-
 .statusDetail {
-  color: #64748b;
-  font-size: 0.82rem;
-  margin: 0 0 6px;
+  color: #475569;
+  font-size: 0.8rem;
+  margin: 0;
 }
 
 .resultSummary {
@@ -209,7 +203,7 @@
 
 .resultList {
   display: grid;
-  gap: 8px;
+  gap: 12px;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -218,21 +212,135 @@
 }
 
 .resultItem {
+  list-style: none;
+}
+
+.resultCard {
   background: #ffffff;
   border: 1px solid #dbe6f3;
-  border-radius: 10px;
+  border-radius: 12px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 92px minmax(0, 1fr);
   padding: 12px;
+}
+
+.resultCoverArea {
+  aspect-ratio: 3 / 4;
+  background: #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+}
+
+.resultCoverImage {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.resultCoverPlaceholder {
+  align-items: center;
+  background: linear-gradient(165deg, #e2e8f0 0%, #f1f5f9 55%, #f8fafc 100%);
+  color: #475569;
+  display: flex;
+  font-size: 0.75rem;
+  font-weight: 700;
+  height: 100%;
+  justify-content: center;
+  letter-spacing: 0.08em;
+  width: 100%;
+}
+
+.resultContent {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.resultHeading {
+  align-items: flex-start;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
 }
 
 .resultTitle {
   color: #0f172a;
-  font-size: 0.95rem;
+  display: -webkit-box;
+  font-size: 0.98rem;
   font-weight: 700;
-  margin: 0 0 4px;
+  line-height: 1.45;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.ownedBadge {
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 7px 10px;
+  white-space: nowrap;
+}
+
+.ownedBadgeOwned {
+  background: #e0f2fe;
+  border-color: #7dd3fc;
+  color: #075985;
+}
+
+.ownedBadgeNotOwned {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.ownedBadgeUnknown {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+  color: #374151;
+}
+
+.resultMetaList {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.resultMetaRow {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+  margin: 0;
+}
+
+.resultMetaLabel {
+  color: #64748b;
+  font-size: 0.8rem;
+  font-weight: 600;
+  min-width: 40px;
+}
+
+.resultMetaValue {
+  color: #1e293b;
+  flex: 1;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  margin: 0;
+  min-width: 0;
+  word-break: break-word;
 }
 
 .registerActionRow {
-  margin: 0 0 8px;
+  margin: 0;
 }
 
 .registerActionButton {
@@ -246,23 +354,24 @@
   font-size: 0.8rem;
   font-weight: 600;
   justify-content: center;
-  padding: 7px 12px;
+  padding: 8px 14px;
   text-decoration: none;
 }
 
-.registerActionButton:hover {
+.registerActionButton:hover:not(:disabled) {
   background: #1e293b;
 }
 
 .registerActionButton:disabled {
-  background: #94a3b8;
+  background: #cbd5e1;
+  color: #475569;
   cursor: not-allowed;
 }
 
 .registerFeedbackPanel {
   border: 1px solid transparent;
   border-radius: 8px;
-  margin: 0 0 8px;
+  margin: 0;
   padding: 8px 10px;
 }
 
@@ -298,8 +407,8 @@
 }
 
 .resultMeta {
-  color: #334155;
-  font-size: 0.85rem;
+  color: #64748b;
+  font-size: 0.78rem;
   line-height: 1.45;
   margin: 0;
 }
@@ -328,5 +437,19 @@
 
   .searchButton {
     width: 100%;
+  }
+
+  .resultCard {
+    gap: 10px;
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .ownedBadge {
+    font-size: 0.7rem;
+    padding: 6px 9px;
+  }
+
+  .resultMetaLabel {
+    min-width: 36px;
   }
 }
