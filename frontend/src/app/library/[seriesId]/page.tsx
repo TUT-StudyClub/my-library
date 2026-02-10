@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { RegisteredVolumesSection } from "./RegisteredVolumesSection";
 import { SeriesCandidatesSection } from "./SeriesCandidatesSection";
 import styles from "./page.module.css";
 
@@ -98,15 +99,6 @@ function isSeriesDetail(value: unknown): value is SeriesDetail {
   );
 }
 
-function formatRegisteredAt(registeredAt: string): string {
-  const parsedDate = new Date(registeredAt);
-  if (Number.isNaN(parsedDate.getTime())) {
-    return registeredAt;
-  }
-
-  return parsedDate.toLocaleString("ja-JP", { hour12: false });
-}
-
 async function fetchSeriesDetail(seriesId: string): Promise<SeriesDetail> {
   const requestUrl = new URL(`/api/series/${seriesId}`, API_BASE_URL);
   const response = await fetch(requestUrl.toString(), { cache: "no-store" });
@@ -163,31 +155,10 @@ export default async function SeriesDetailPage({ params }: SeriesDetailPageProps
 
         <div className={styles.volumeRows}>
           <SeriesCandidatesSection seriesId={normalizedSeriesId} />
-
-          <section className={styles.volumeSection}>
-            <h2 className={styles.sectionTitle}>登録済み巻</h2>
-            {seriesDetail.volumes.length === 0 ? (
-              <div aria-live="polite" className={styles.placeholderPanel} role="status">
-                <p className={styles.placeholderText}>登録済みの巻はありません。</p>
-              </div>
-            ) : (
-              <ul className={styles.volumeList}>
-                {seriesDetail.volumes.map((volume) => (
-                  <li className={styles.volumeListItem} key={volume.isbn}>
-                    <article className={styles.volumeCard}>
-                      <p className={styles.volumeNumber}>
-                        {volume.volume_number === null ? "巻数不明" : `${volume.volume_number}巻`}
-                      </p>
-                      <p className={styles.volumeMeta}>ISBN: {volume.isbn}</p>
-                      <p className={styles.volumeMeta}>
-                        登録日時: {formatRegisteredAt(volume.registered_at)}
-                      </p>
-                    </article>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          <RegisteredVolumesSection
+            initialVolumes={seriesDetail.volumes}
+            seriesId={normalizedSeriesId}
+          />
         </div>
       </div>
     </main>
