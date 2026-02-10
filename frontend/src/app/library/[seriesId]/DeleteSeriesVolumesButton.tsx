@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { publishLibraryRefreshSignal } from "@/lib/libraryRefreshSignal";
 import styles from "./page.module.css";
 
@@ -40,17 +40,20 @@ export function DeleteSeriesVolumesButton({
   const router = useRouter();
   const [isDeleting, setIsDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const isDeletingRef = useRef(false);
 
   const deleteAllVolumes = async () => {
-    if (isDeleting) {
+    if (isDeletingRef.current) {
       return;
     }
+    isDeletingRef.current = true;
 
     const targetSeriesTitle = seriesTitle.trim() === "" ? "この作品" : seriesTitle.trim();
     const shouldDelete = window.confirm(
       `「${targetSeriesTitle}」の登録済み巻をすべて削除します。よろしいですか？`
     );
     if (!shouldDelete) {
+      isDeletingRef.current = false;
       return;
     }
 
@@ -78,6 +81,7 @@ export function DeleteSeriesVolumesButton({
         setErrorMessage(DELETE_REQUEST_ERROR_MESSAGE);
       }
     } finally {
+      isDeletingRef.current = false;
       setIsDeleting(false);
     }
   };
