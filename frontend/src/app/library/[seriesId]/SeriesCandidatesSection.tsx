@@ -301,6 +301,14 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
         });
         if (!response.ok) {
           const errorPayload = (await response.json().catch(() => null)) as unknown;
+          const errorCode = extractApiErrorCode(errorPayload);
+          if (response.status === 404 && errorCode === "SERIES_NOT_FOUND") {
+            publishLibraryRefreshSignal();
+            router.replace("/library");
+            router.refresh();
+            return;
+          }
+
           throw new Error(
             buildUserFacingApiErrorMessage({
               errorPayload,
@@ -350,7 +358,7 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
       isDisposed = true;
       abortController.abort();
     };
-  }, [reloadKey, seriesId]);
+  }, [reloadKey, router, seriesId]);
 
   useEffect(() => {
     if (selectedCandidate === null) {
