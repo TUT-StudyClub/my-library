@@ -1,6 +1,8 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { publishLibraryRefreshSignal } from "@/lib/libraryRefreshSignal";
 import styles from "./page.module.css";
 
 type SeriesCandidate = {
@@ -18,6 +20,13 @@ type SeriesCandidatesSectionProps = {
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const DEFAULT_FETCH_ERROR_MESSAGE = "未登録候補の取得に失敗しました。";
+const DEFAULT_REGISTER_ERROR_MESSAGE = "候補の登録に失敗しました。";
+const REGISTER_REQUEST_ERROR_MESSAGE = "登録リクエストの送信に失敗しました。";
+
+type CandidateActionNotice = {
+  tone: "success" | "info" | "error";
+  message: string;
+};
 
 function extractErrorMessage(errorPayload: unknown, statusCode: number): string {
   if (
@@ -44,6 +53,63 @@ function normalizeErrorMessage(error: unknown): string {
   }
 
   return DEFAULT_FETCH_ERROR_MESSAGE;
+}
+
+function extractRegisterErrorMessage(errorPayload: unknown, statusCode: number): string {
+  if (
+    typeof errorPayload === "object" &&
+    errorPayload !== null &&
+    "error" in errorPayload &&
+    typeof errorPayload.error === "object" &&
+    errorPayload.error !== null &&
+    "message" in errorPayload.error &&
+    typeof errorPayload.error.message === "string"
+  ) {
+    const message = errorPayload.error.message.trim();
+    if (message !== "") {
+      return message;
+    }
+  }
+
+  return `${DEFAULT_REGISTER_ERROR_MESSAGE} (status: ${statusCode})`;
+}
+
+function extractRegisterErrorCode(errorPayload: unknown): string | null {
+  if (
+    typeof errorPayload === "object" &&
+    errorPayload !== null &&
+    "error" in errorPayload &&
+    typeof errorPayload.error === "object" &&
+    errorPayload.error !== null &&
+    "code" in errorPayload.error &&
+    typeof errorPayload.error.code === "string"
+  ) {
+    const errorCode = errorPayload.error.code.trim();
+    if (errorCode !== "") {
+      return errorCode;
+    }
+  }
+
+  return null;
+}
+
+function extractRegisteredIsbn(payload: unknown): string | null {
+  if (
+    typeof payload === "object" &&
+    payload !== null &&
+    "volume" in payload &&
+    typeof payload.volume === "object" &&
+    payload.volume !== null &&
+    "isbn" in payload.volume &&
+    typeof payload.volume.isbn === "string"
+  ) {
+    const normalizedIsbn = payload.volume.isbn.trim();
+    if (normalizedIsbn !== "") {
+      return normalizedIsbn;
+    }
+  }
+
+  return null;
 }
 
 function isSeriesCandidate(value: unknown): value is SeriesCandidate {
@@ -108,11 +174,15 @@ function mergeCandidatesByIsbn(candidates: SeriesCandidate[]): SeriesCandidate[]
 }
 
 export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionProps) {
+  const router = useRouter();
   const [candidates, setCandidates] = useState<SeriesCandidate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [selectedCandidate, setSelectedCandidate] = useState<SeriesCandidate | null>(null);
+  const [isSubmittingRegister, setIsSubmittingRegister] = useState(false);
+  const [modalErrorMessage, setModalErrorMessage] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<CandidateActionNotice | null>(null);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -122,6 +192,7 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
       setIsLoading(true);
       setErrorMessage(null);
       setSelectedCandidate(null);
+      setModalErrorMessage(null);
 
       try {
         const requestUrl = new URL(`/api/series/${seriesId}/candidates`, API_BASE_URL);
@@ -172,7 +243,8 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !isSubmittingRegister) {
+        setModalErrorMessage(null);
         setSelectedCandidate(null);
       }
     };
@@ -182,7 +254,80 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [selectedCandidate]);
+  }, [isSubmittingRegister, selectedCandidate]);
+
+  const closeCandidateModal = () => {
+    if (isSubmittingRegister) {
+      return;
+    }
+
+    setModalErrorMessage(null);
+    setSelectedCandidate(null);
+  };
+
+  const registerCandidate = async () => {
+    if (selectedCandidate === null || isSubmittingRegister) {
+      return;
+    }
+
+    const targetCandidate = selectedCandidate;
+    setIsSubmittingRegister(true);
+    setModalErrorMessage(null);
+
+    try {
+      const response = await fetch(new URL("/api/volumes", API_BASE_URL).toString(), {
+        body: JSON.stringify({
+          isbn: targetCandidate.isbn,
+        }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        const errorPayload = (await response.json().catch(() => null)) as unknown;
+        const registerErrorCode = extractRegisterErrorCode(errorPayload);
+
+        if (response.status === 409 && registerErrorCode === "VOLUME_ALREADY_EXISTS") {
+          setActionNotice({
+            tone: "info",
+            message: `ISBN: ${targetCandidate.isbn} は既に登録済みです。`,
+          });
+          setCandidates((currentCandidates) =>
+            currentCandidates.filter((candidate) => candidate.isbn !== targetCandidate.isbn)
+          );
+          setModalErrorMessage(null);
+          setSelectedCandidate(null);
+          setReloadKey((currentValue) => currentValue + 1);
+          router.refresh();
+          return;
+        }
+
+        setModalErrorMessage(extractRegisterErrorMessage(errorPayload, response.status));
+        return;
+      }
+
+      const successPayload = (await response.json().catch(() => null)) as unknown;
+      const registeredIsbn = extractRegisteredIsbn(successPayload) ?? targetCandidate.isbn;
+      setActionNotice({
+        tone: "success",
+        message: `登録しました（ISBN: ${registeredIsbn}）。`,
+      });
+      setCandidates((currentCandidates) =>
+        currentCandidates.filter((candidate) => candidate.isbn !== targetCandidate.isbn)
+      );
+      setModalErrorMessage(null);
+      setSelectedCandidate(null);
+      setReloadKey((currentValue) => currentValue + 1);
+      publishLibraryRefreshSignal();
+      router.refresh();
+    } catch {
+      setModalErrorMessage(REGISTER_REQUEST_ERROR_MESSAGE);
+    } finally {
+      setIsSubmittingRegister(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -222,6 +367,21 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
     return (
       <section className={styles.volumeSection}>
         <h2 className={styles.sectionTitle}>未登録候補</h2>
+        {actionNotice !== null ? (
+          <p
+            aria-live="polite"
+            className={`${styles.candidateActionMessage} ${
+              actionNotice.tone === "success"
+                ? styles.candidateActionMessageSuccess
+                : actionNotice.tone === "info"
+                  ? styles.candidateActionMessageInfo
+                  : styles.candidateActionMessageError
+            }`}
+            role="status"
+          >
+            {actionNotice.message}
+          </p>
+        ) : null}
         <div aria-live="polite" className={styles.placeholderPanel} role="status">
           <p className={styles.placeholderText}>未登録候補はありません。</p>
         </div>
@@ -235,17 +395,34 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
   return (
     <section className={styles.volumeSection}>
       <h2 className={styles.sectionTitle}>未登録候補</h2>
+      {actionNotice !== null ? (
+        <p
+          aria-live="polite"
+          className={`${styles.candidateActionMessage} ${
+            actionNotice.tone === "success"
+              ? styles.candidateActionMessageSuccess
+              : actionNotice.tone === "info"
+                ? styles.candidateActionMessageInfo
+                : styles.candidateActionMessageError
+          }`}
+          role="status"
+        >
+          {actionNotice.message}
+        </p>
+      ) : null}
       <ul className={styles.candidateList}>
         {candidates.map((candidate) => (
           <li className={styles.candidateListItem} key={candidate.isbn}>
             <article
               className={`${styles.volumeCard} ${styles.candidateCardInteractive}`}
               onClick={() => {
+                setModalErrorMessage(null);
                 setSelectedCandidate(candidate);
               }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
+                  setModalErrorMessage(null);
                   setSelectedCandidate(candidate);
                 }
               }}
@@ -274,7 +451,7 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
         <div
           className={styles.candidateModalOverlay}
           onClick={() => {
-            setSelectedCandidate(null);
+            closeCandidateModal();
           }}
           role="presentation"
         >
@@ -294,15 +471,6 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
               >
                 候補詳細
               </h3>
-              <button
-                className={styles.candidateModalCloseButton}
-                onClick={() => {
-                  setSelectedCandidate(null);
-                }}
-                type="button"
-              >
-                閉じる
-              </button>
             </header>
             <dl className={styles.candidateModalMetaList}>
               <div className={styles.candidateModalMetaRow}>
@@ -349,6 +517,34 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
                 </dd>
               </div>
             </dl>
+            <p className={styles.candidateModalDescription}>この候補を登録しますか？</p>
+            {modalErrorMessage !== null ? (
+              <p aria-live="polite" className={styles.candidateModalErrorMessage} role="status">
+                {modalErrorMessage}
+              </p>
+            ) : null}
+            <div className={styles.candidateModalActions}>
+              <button
+                className={styles.candidateModalSubmitButton}
+                onClick={() => {
+                  void registerCandidate();
+                }}
+                type="button"
+                disabled={isSubmittingRegister}
+              >
+                {isSubmittingRegister ? "登録中..." : "登録する"}
+              </button>
+              <button
+                className={styles.candidateModalCancelButton}
+                onClick={() => {
+                  closeCandidateModal();
+                }}
+                type="button"
+                disabled={isSubmittingRegister}
+              >
+                しない
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
