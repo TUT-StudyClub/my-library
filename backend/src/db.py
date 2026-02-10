@@ -1,8 +1,11 @@
+import logging
 import sqlite3
 from collections.abc import Generator
 from pathlib import Path
 
 from src.config import load_settings
+
+logger = logging.getLogger(__name__)
 
 
 def get_db_path() -> Path:
@@ -61,6 +64,55 @@ def _recreate_volume_with_foreign_key(connection: sqlite3.Connection) -> None:
         """)
 
 
+def _merge_duplicate_series_by_metadata(connection: sqlite3.Connection) -> None:
+    """同一メタデータの重複 series を1件へ統合し、volume.series_id を寄せる."""
+    rows = connection.execute("""
+        SELECT id, title, author, publisher
+        FROM series
+        ORDER BY id ASC;
+        """).fetchall()
+
+    canonical_id_by_key: dict[tuple[str, str, str], int] = {}
+    merge_pairs: list[tuple[int, int]] = []
+
+    for row in rows:
+        series_id = int(row[0])
+        title = str(row[1])
+        author = str(row[2] or "")
+        publisher = str(row[3] or "")
+        metadata_key = (title, author, publisher)
+
+        canonical_id = canonical_id_by_key.get(metadata_key)
+        if canonical_id is None:
+            canonical_id_by_key[metadata_key] = series_id
+            continue
+
+        merge_pairs.append((series_id, canonical_id))
+
+    for duplicate_id, canonical_id in merge_pairs:
+        connection.execute(
+            """
+            UPDATE volume
+            SET series_id = ?
+            WHERE series_id = ?;
+            """,
+            (canonical_id, duplicate_id),
+        )
+        connection.execute(
+            """
+            DELETE FROM series
+            WHERE id = ?;
+            """,
+            (duplicate_id,),
+        )
+
+    if len(merge_pairs) > 0:
+        logger.warning(
+            "seriesメタデータ重複を補正しました。mergedSeriesCount=%s",
+            len(merge_pairs),
+        )
+
+
 def initialize_database() -> None:
     """DBファイルと最小スキーマを作成する."""
     db_path = get_db_path()
@@ -89,9 +141,13 @@ def initialize_database() -> None:
         if not _has_volume_series_foreign_key(connection):
             _recreate_volume_with_foreign_key(connection)
 
+        _merge_duplicate_series_by_metadata(connection)
+
         connection.executescript("""
             CREATE INDEX IF NOT EXISTS idx_series_title ON series(title);
             CREATE INDEX IF NOT EXISTS idx_series_author ON series(author);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_series_identity
+            ON series(title, COALESCE(author, ''), COALESCE(publisher, ''));
             CREATE UNIQUE INDEX IF NOT EXISTS idx_volume_isbn ON volume(isbn);
             CREATE INDEX IF NOT EXISTS idx_volume_series_id ON volume(series_id);
             """)
