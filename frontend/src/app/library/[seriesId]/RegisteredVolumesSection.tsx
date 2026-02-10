@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { buildUserFacingApiErrorMessage } from "@/lib/apiError";
 import { publishLibraryRefreshSignal } from "@/lib/libraryRefreshSignal";
 import { type SeriesVolume, subscribeSeriesVolumeRegistered } from "@/lib/seriesVolumeSignal";
 import styles from "./page.module.css";
@@ -65,25 +66,6 @@ function formatRegisteredAt(registeredAt: string): string {
   }
 
   return parsedDate.toLocaleString("ja-JP", { hour12: false });
-}
-
-function extractDeleteErrorMessage(errorPayload: unknown, statusCode: number): string {
-  if (
-    typeof errorPayload === "object" &&
-    errorPayload !== null &&
-    "error" in errorPayload &&
-    typeof errorPayload.error === "object" &&
-    errorPayload.error !== null &&
-    "message" in errorPayload.error &&
-    typeof errorPayload.error.message === "string"
-  ) {
-    const message = errorPayload.error.message.trim();
-    if (message !== "") {
-      return message;
-    }
-  }
-
-  return `${DEFAULT_DELETE_ERROR_MESSAGE} (status: ${statusCode})`;
 }
 
 function extractDeletedIsbn(payload: unknown): string | null {
@@ -155,7 +137,13 @@ export function RegisteredVolumesSection({
 
       if (!response.ok) {
         const errorPayload = (await response.json().catch(() => null)) as unknown;
-        throw new Error(extractDeleteErrorMessage(errorPayload, response.status));
+        throw new Error(
+          buildUserFacingApiErrorMessage({
+            errorPayload,
+            statusCode: response.status,
+            fallbackMessage: DEFAULT_DELETE_ERROR_MESSAGE,
+          })
+        );
       }
 
       const successPayload = (await response.json().catch(() => null)) as unknown;
