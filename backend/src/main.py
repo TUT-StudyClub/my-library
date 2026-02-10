@@ -2,7 +2,7 @@ import logging
 import re
 import sqlite3
 import unicodedata
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Annotated, Any, NoReturn, Optional
@@ -50,6 +50,14 @@ DEFAULT_ERROR_CODE_BY_STATUS = {
     status.HTTP_503_SERVICE_UNAVAILABLE: "SERVICE_UNAVAILABLE",
     status.HTTP_504_GATEWAY_TIMEOUT: "GATEWAY_TIMEOUT",
 }
+SERIES_CANDIDATES_SEARCH_LIMIT = 100
+SERIES_CANDIDATE_EXCLUSION_KEYWORDS = (
+    "特装版",
+    "電子版",
+    "電子書籍",
+    "kindle",
+    "[kindle版]",
+)
 
 
 def _build_error_response(
@@ -179,6 +187,33 @@ class CreateVolumeResponse(BaseModel):
 
     series: SeriesResponse
     volume: VolumeResponse
+
+
+class BookDTO(BaseModel):
+    """Series候補一覧向けの Book レスポンス."""
+
+    title: str = Field(
+        description="候補タイトル。必須で返す。",
+    )
+    author: Optional[str] = Field(
+        default=None,
+        description="著者名。取得できない場合はnull。",
+    )
+    publisher: Optional[str] = Field(
+        default=None,
+        description="出版社名。取得できない場合はnull。",
+    )
+    isbn: str = Field(
+        description="ISBN-13（半角数字13桁）。必須で返す。",
+    )
+    volume_number: Optional[int] = Field(
+        default=None,
+        description="巻数。抽出できない場合はnull。",
+    )
+    cover_url: Optional[str] = Field(
+        default=None,
+        description="表紙URL。書影情報が無い場合はnull（画像バイナリは返さない）。",
+    )
 
 
 def _normalize_isbn(raw_isbn: str) -> str:
@@ -349,6 +384,191 @@ def _attach_owned_status(
     return candidate.model_copy(
         update={"owned": _resolve_owned_status(candidate.isbn, owned_isbn_set)}
     )
+
+
+def _normalize_text_for_match(raw_text: Optional[str]) -> Optional[str]:
+    """シリーズ候補の突合用に文字列を正規化する."""
+    if raw_text is None:
+        return None
+
+    normalized_text = unicodedata.normalize("NFKC", raw_text).strip().casefold()
+    if normalized_text == "":
+        return None
+
+    compact_text = re.sub(r"\s+", "", normalized_text)
+    if compact_text == "":
+        return None
+
+    return compact_text
+
+
+def _is_metadata_match(expected_value: Optional[str], candidate_value: Optional[str]) -> bool:
+    """シリーズのメタデータが候補と整合するか判定する."""
+    normalized_expected = _normalize_text_for_match(expected_value)
+    if normalized_expected is None:
+        return True
+
+    normalized_candidate = _normalize_text_for_match(candidate_value)
+    if normalized_candidate is None:
+        return True
+
+    return (
+        normalized_expected in normalized_candidate or normalized_candidate in normalized_expected
+    )
+
+
+def _is_series_title_match(series_title: str, candidate_title: str) -> bool:
+    """候補タイトルが対象シリーズと一致するか判定する."""
+    normalized_series_title = _normalize_text_for_match(series_title)
+    normalized_candidate_title = _normalize_text_for_match(candidate_title)
+    if normalized_series_title is None or normalized_candidate_title is None:
+        return False
+
+    return (
+        normalized_series_title in normalized_candidate_title
+        or normalized_candidate_title in normalized_series_title
+    )
+
+
+def _build_series_candidates_query(
+    series_title: str,
+    series_author: Optional[str],
+    series_publisher: Optional[str],
+) -> str:
+    """シリーズ情報から候補抽出クエリを組み立てる."""
+    query_parts = [series_title.strip()]
+
+    normalized_author = _normalize_text_for_match(series_author)
+    if normalized_author is not None and series_author is not None:
+        query_parts.append(series_author.strip())
+
+    normalized_publisher = _normalize_text_for_match(series_publisher)
+    if normalized_publisher is not None and series_publisher is not None:
+        query_parts.append(series_publisher.strip())
+
+    return " ".join(query_parts)
+
+
+def _contains_exclusion_keyword(candidate: CatalogSearchCandidate) -> bool:
+    """版違いなどの除外語に該当する候補か判定する."""
+    normalized_text_parts = [
+        normalized_text
+        for normalized_text in (
+            _normalize_text_for_match(candidate.title),
+            _normalize_text_for_match(candidate.author),
+            _normalize_text_for_match(candidate.publisher),
+        )
+        if normalized_text is not None
+    ]
+    if len(normalized_text_parts) == 0:
+        return False
+
+    searchable_text = " ".join(normalized_text_parts)
+    return any(
+        exclusion_keyword in searchable_text
+        for exclusion_keyword in SERIES_CANDIDATE_EXCLUSION_KEYWORDS
+    )
+
+
+def _pick_preferred_candidate(
+    existing_candidate: CatalogSearchCandidate, incoming_candidate: CatalogSearchCandidate
+) -> CatalogSearchCandidate:
+    """同一ISBNの重複候補から優先候補を選ぶ."""
+    if existing_candidate.volume_number is None and incoming_candidate.volume_number is not None:
+        return incoming_candidate
+
+    if (
+        existing_candidate.volume_number is not None
+        and incoming_candidate.volume_number is not None
+        and incoming_candidate.volume_number < existing_candidate.volume_number
+    ):
+        return incoming_candidate
+
+    if existing_candidate.cover_url is None and incoming_candidate.cover_url is not None:
+        return incoming_candidate
+
+    return existing_candidate
+
+
+def _sort_series_candidates(
+    candidates: Iterable[CatalogSearchCandidate],
+) -> list[CatalogSearchCandidate]:
+    """シリーズ候補の並び順を固定する."""
+    return sorted(
+        candidates,
+        key=lambda candidate: (
+            candidate.volume_number is None,
+            candidate.volume_number if candidate.volume_number is not None else 0,
+            candidate.isbn or "",
+        ),
+    )
+
+
+def _to_book_dto(candidate: CatalogSearchCandidate) -> BookDTO:
+    """シリーズ候補を BookDTO へ変換する."""
+    if candidate.isbn is None:
+        raise ValueError("isbn is required for BookDTO")
+
+    return BookDTO(
+        title=candidate.title,
+        author=candidate.author,
+        publisher=candidate.publisher,
+        isbn=candidate.isbn,
+        volume_number=candidate.volume_number,
+        cover_url=candidate.cover_url,
+    )
+
+
+def _extract_unregistered_series_candidates(
+    series_title: str,
+    series_author: Optional[str],
+    series_publisher: Optional[str],
+    candidates: Sequence[CatalogSearchCandidate],
+    registered_isbn_set: set[str],
+    registered_volume_numbers: set[int],
+) -> list[BookDTO]:
+    """シリーズ候補から未登録のみを抽出する."""
+    deduplicated_candidates_by_isbn: dict[str, CatalogSearchCandidate] = {}
+
+    for candidate in candidates:
+        if candidate.isbn is None:
+            continue
+
+        if candidate.isbn in registered_isbn_set:
+            continue
+
+        if (
+            candidate.volume_number is not None
+            and candidate.volume_number in registered_volume_numbers
+        ):
+            continue
+
+        if not _is_series_title_match(series_title, candidate.title):
+            continue
+
+        if not _is_metadata_match(series_author, candidate.author):
+            continue
+
+        if not _is_metadata_match(series_publisher, candidate.publisher):
+            continue
+
+        if _contains_exclusion_keyword(candidate):
+            continue
+
+        existing_candidate = deduplicated_candidates_by_isbn.get(candidate.isbn)
+        if existing_candidate is None:
+            deduplicated_candidates_by_isbn[candidate.isbn] = candidate
+            continue
+
+        deduplicated_candidates_by_isbn[candidate.isbn] = _pick_preferred_candidate(
+            existing_candidate=existing_candidate,
+            incoming_candidate=candidate,
+        )
+
+    return [
+        _to_book_dto(candidate)
+        for candidate in _sort_series_candidates(deduplicated_candidates_by_isbn.values())
+    ]
 
 
 def _find_or_create_series(
@@ -838,6 +1058,53 @@ async def lookup_catalog(
         candidate_isbns=[candidate_dto.isbn] if candidate_dto.isbn is not None else [],
     )
     return _attach_owned_status(candidate_dto, owned_isbn_set)
+
+
+@app.get("/api/series/{series_id}/candidates", response_model=list[BookDTO])
+async def list_series_candidates(
+    series_id: int,
+    connection: Annotated[sqlite3.Connection, Depends(get_db_connection)],
+):
+    """Series情報を使って未登録巻候補を返す."""
+    series_detail = fetch_series_detail(connection=connection, series_id=series_id)
+    if series_detail is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "SERIES_NOT_FOUND",
+                "message": "Series not found",
+                "details": {"seriesId": series_id},
+            },
+        )
+
+    search_query = _build_series_candidates_query(
+        series_title=series_detail.title,
+        series_author=series_detail.author,
+        series_publisher=series_detail.publisher,
+    )
+    searched_candidates: list[CatalogSearchCandidate] = await run_in_threadpool(
+        _search_catalog_by_keyword, search_query, SERIES_CANDIDATES_SEARCH_LIMIT
+    )
+    candidate_dtos = [
+        _to_catalog_search_candidate_dto(candidate) for candidate in searched_candidates
+    ]
+    registered_isbn_set = _fetch_registered_isbn_set(
+        connection=connection,
+        candidate_isbns=[
+            candidate.isbn for candidate in candidate_dtos if candidate.isbn is not None
+        ],
+    ) | {volume.isbn for volume in series_detail.volumes}
+    registered_volume_numbers = {
+        volume.volume_number for volume in series_detail.volumes if volume.volume_number is not None
+    }
+    return _extract_unregistered_series_candidates(
+        series_title=series_detail.title,
+        series_author=series_detail.author,
+        series_publisher=series_detail.publisher,
+        candidates=candidate_dtos,
+        registered_isbn_set=registered_isbn_set,
+        registered_volume_numbers=registered_volume_numbers,
+    )
 
 
 @app.get("/api/series/{series_id}", response_model=SeriesDetailResponse)
