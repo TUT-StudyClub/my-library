@@ -71,6 +71,11 @@
   margin: 0;
 }
 
+.volumeRows {
+  display: grid;
+  gap: 16px;
+}
+
 .volumeSection {
   background: #ffffff;
   border: 1px solid #e2e8f0;
@@ -96,6 +101,21 @@
   margin: 0;
 }
 
+.candidateList {
+  display: grid;
+  gap: 12px;
+  grid-auto-columns: minmax(220px, 260px);
+  grid-auto-flow: column;
+  list-style: none;
+  margin: 0;
+  overflow-x: auto;
+  padding: 0 2px 4px;
+}
+
+.candidateListItem {
+  margin: 0;
+}
+
 .volumeCard {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
@@ -103,11 +123,45 @@
   padding: 14px;
 }
 
+.candidateTitle {
+  color: #0f172a;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 0 0 8px;
+}
+
 .volumeNumber {
   color: #0f172a;
   font-size: 1rem;
   font-weight: 700;
   margin: 0 0 8px;
+}
+
+.candidateMetaList {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 8px;
+}
+
+.candidateMetaRow {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+}
+
+.candidateMetaLabel {
+  color: #64748b;
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin: 0;
+  min-width: 40px;
+}
+
+.candidateMetaValue {
+  color: #334155;
+  font-size: 0.86rem;
+  margin: 0;
 }
 
 .volumeMeta {
@@ -182,5 +236,9 @@
   .header,
   .volumeSection {
     padding: 16px;
+  }
+
+  .candidateList {
+    grid-auto-columns: minmax(190px, 72vw);
   }
 }
