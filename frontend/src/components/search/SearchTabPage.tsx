@@ -18,6 +18,7 @@ type SearchResultStatus = "idle" | "loading" | "error" | "empty" | "success";
 type RegisterFeedbackTone = "success" | "info" | "error";
 type RegisterFeedback = {
   tone: RegisterFeedbackTone;
+  title: string;
   message: string;
 };
 
@@ -27,6 +28,9 @@ const DEFAULT_REGISTER_ERROR_MESSAGE = "登録に失敗しました。";
 const REGISTER_REQUEST_ERROR_MESSAGE = "登録リクエストの送信に失敗しました。";
 const REGISTER_SUCCESS_MESSAGE = "登録完了";
 const REGISTER_ALREADY_EXISTS_MESSAGE = "このISBNは既に登録済みです。";
+const REGISTER_RESULT_SUCCESS_TITLE = "登録結果: 成功";
+const REGISTER_RESULT_ALREADY_EXISTS_TITLE = "登録結果: 登録済み";
+const REGISTER_RESULT_FAILURE_TITLE = "登録結果: 失敗";
 const SEARCH_LIMIT = 20;
 
 function getOwnedLabel(owned: CatalogSearchCandidate["owned"]): string {
@@ -303,6 +307,7 @@ export function SearchTabPage() {
             ...currentValue,
             [candidateKey]: {
               tone: "info",
+              title: REGISTER_RESULT_ALREADY_EXISTS_TITLE,
               message: REGISTER_ALREADY_EXISTS_MESSAGE,
             },
           }));
@@ -313,6 +318,7 @@ export function SearchTabPage() {
           ...currentValue,
           [candidateKey]: {
             tone: "error",
+            title: REGISTER_RESULT_FAILURE_TITLE,
             message: extractRegisterErrorMessage(errorPayload, response.status),
           },
         }));
@@ -341,6 +347,7 @@ export function SearchTabPage() {
         ...currentValue,
         [candidateKey]: {
           tone: "success",
+          title: REGISTER_RESULT_SUCCESS_TITLE,
           message: successMessage,
         },
       }));
@@ -349,6 +356,7 @@ export function SearchTabPage() {
         ...currentValue,
         [candidateKey]: {
           tone: "error",
+          title: REGISTER_RESULT_FAILURE_TITLE,
           message: REGISTER_REQUEST_ERROR_MESSAGE,
         },
       }));
@@ -431,10 +439,10 @@ export function SearchTabPage() {
                       registerFeedback === undefined
                         ? null
                         : registerFeedback.tone === "success"
-                          ? `${styles.registerFeedbackText} ${styles.registerFeedbackSuccess}`
+                          ? `${styles.registerFeedbackPanel} ${styles.registerFeedbackSuccess}`
                           : registerFeedback.tone === "info"
-                            ? `${styles.registerFeedbackText} ${styles.registerFeedbackInfo}`
-                            : `${styles.registerFeedbackText} ${styles.registerFeedbackError}`;
+                            ? `${styles.registerFeedbackPanel} ${styles.registerFeedbackInfo}`
+                            : `${styles.registerFeedbackPanel} ${styles.registerFeedbackError}`;
 
                     return (
                       <li className={styles.resultItem} key={candidateKey}>
@@ -460,7 +468,16 @@ export function SearchTabPage() {
                           </p>
                         )}
                         {registerFeedbackClassName !== null && (
-                          <p className={registerFeedbackClassName}>{registerFeedback.message}</p>
+                          <div
+                            aria-live="polite"
+                            className={registerFeedbackClassName}
+                            role={registerFeedback?.tone === "error" ? "alert" : "status"}
+                          >
+                            <p className={styles.registerFeedbackTitle}>{registerFeedback.title}</p>
+                            <p className={styles.registerFeedbackMessage}>
+                              {registerFeedback.message}
+                            </p>
+                          </div>
                         )}
                         <p className={styles.resultMeta}>
                           著者: {candidate.author ?? "不明"} / 出版社:{" "}
