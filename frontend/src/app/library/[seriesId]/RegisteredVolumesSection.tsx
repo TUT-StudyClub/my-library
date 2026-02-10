@@ -4,7 +4,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { buildUserFacingApiErrorMessage, extractApiErrorCode } from "@/lib/apiError";
 import { publishLibraryRefreshSignal } from "@/lib/libraryRefreshSignal";
-import { type SeriesVolume, subscribeSeriesVolumeRegistered } from "@/lib/seriesVolumeSignal";
+import {
+  publishSeriesVolumeDeleted,
+  type SeriesVolume,
+  subscribeSeriesVolumeRegistered,
+} from "@/lib/seriesVolumeSignal";
 import styles from "./page.module.css";
 
 type RegisteredVolumesSectionProps = {
@@ -161,6 +165,7 @@ export function RegisteredVolumesSection({
             tone: "success",
             message: `ISBN: ${isbn} は既に削除済みです。`,
           });
+          publishSeriesVolumeDeleted({ isbn, seriesId });
           publishLibraryRefreshSignal();
           router.refresh();
           return;
@@ -186,6 +191,7 @@ export function RegisteredVolumesSection({
         tone: "success",
         message: `ISBN: ${deletedIsbn} を削除しました。`,
       });
+      publishSeriesVolumeDeleted({ isbn: deletedIsbn, seriesId });
       publishLibraryRefreshSignal();
       router.refresh();
     } catch (error) {
