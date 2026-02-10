@@ -158,7 +158,9 @@ export function RegisteredVolumesSection({
       const successPayload = (await response.json().catch(() => null)) as unknown;
       const deletedIsbn = extractDeletedIsbn(successPayload) ?? isbn;
       setVolumes((currentVolumes) =>
-        currentVolumes.filter((currentVolume) => currentVolume.isbn !== isbn)
+        currentVolumes.filter(
+          (currentVolume) => currentVolume.isbn !== isbn && currentVolume.isbn !== deletedIsbn
+        )
       );
       setDeleteResult({
         tone: "success",
