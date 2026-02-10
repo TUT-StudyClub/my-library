@@ -376,6 +376,24 @@ def test_get_series_candidates_returns_unregistered_candidates(monkeypatch, tmp_
                 owned="unknown",
             ),
             main.CatalogSearchCandidate(
+                title="候補作品 電子版",
+                author="候補著者",
+                publisher="候補出版社",
+                isbn="9780000000007",
+                volume_number=7,
+                cover_url="https://example.com/covers/excluded-ebook.jpg",
+                owned="unknown",
+            ),
+            main.CatalogSearchCandidate(
+                title="候補作品 [Kindle版]",
+                author="候補著者",
+                publisher="候補出版社",
+                isbn="9780000000008",
+                volume_number=8,
+                cover_url="https://example.com/covers/excluded-kindle.jpg",
+                owned="unknown",
+            ),
+            main.CatalogSearchCandidate(
                 title="別作品",
                 author="別著者",
                 publisher="別出版社",
@@ -464,6 +482,50 @@ def test_get_series_candidates_returns_unregistered_candidates(monkeypatch, tmp_
             "cover_url": None,
         },
     ]
+
+
+def test_contains_exclusion_keyword_applies_added_term(monkeypatch):
+    """除外語リストへ語を追加すると候補判定に反映される."""
+    monkeypatch.setattr(
+        main,
+        "SERIES_CANDIDATE_EXCLUSION_TERMS",
+        [*main.SERIES_CANDIDATE_EXCLUSION_TERMS, "限定カバー"],
+    )
+    exclusion_keywords = main._build_series_candidate_exclusion_keywords()
+    candidate = main.CatalogSearchCandidate(
+        title="候補作品 限定カバー付き",
+        author="候補著者",
+        publisher="候補出版社",
+        isbn="9780000000010",
+        volume_number=10,
+        cover_url=None,
+        owned="unknown",
+    )
+
+    assert main._contains_exclusion_keyword(candidate, exclusion_keywords) is True
+
+
+def test_build_series_candidate_exclusion_keywords_skips_blank_or_duplicate_terms(monkeypatch):
+    """除外語リストに空白や重複があっても判定用キーワードは壊れない."""
+    monkeypatch.setattr(
+        main,
+        "SERIES_CANDIDATE_EXCLUSION_TERMS",
+        ["特装版", "", "  ", "Kindle", "Ｋｉｎｄｌｅ", "\n"],
+    )
+
+    exclusion_keywords = main._build_series_candidate_exclusion_keywords()
+    candidate = main.CatalogSearchCandidate(
+        title="通常版",
+        author="候補著者",
+        publisher="候補出版社",
+        isbn="9780000000011",
+        volume_number=11,
+        cover_url=None,
+        owned="unknown",
+    )
+
+    assert exclusion_keywords == ("特装版", "kindle")
+    assert main._contains_exclusion_keyword(candidate, exclusion_keywords) is False
 
 
 def test_get_series_candidates_returns_not_found_when_series_does_not_exist(monkeypatch, tmp_path):
