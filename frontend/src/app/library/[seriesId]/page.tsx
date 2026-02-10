@@ -26,6 +26,25 @@ type SeriesDetailPageProps = {
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const DEFAULT_FETCH_ERROR_MESSAGE = "シリーズ詳細の取得に失敗しました。";
 
+function extractErrorCode(errorPayload: unknown): string | null {
+  if (
+    typeof errorPayload === "object" &&
+    errorPayload !== null &&
+    "error" in errorPayload &&
+    typeof errorPayload.error === "object" &&
+    errorPayload.error !== null &&
+    "code" in errorPayload.error &&
+    typeof errorPayload.error.code === "string"
+  ) {
+    const code = errorPayload.error.code.trim();
+    if (code !== "") {
+      return code;
+    }
+  }
+
+  return null;
+}
+
 function extractErrorMessage(errorPayload: unknown, statusCode: number): string {
   if (
     typeof errorPayload === "object" &&
@@ -91,12 +110,13 @@ async function fetchSeriesDetail(seriesId: string): Promise<SeriesDetail> {
   const requestUrl = new URL(`/api/series/${seriesId}`, API_BASE_URL);
   const response = await fetch(requestUrl.toString(), { cache: "no-store" });
 
-  if (response.status === 404) {
-    notFound();
-  }
-
   if (!response.ok) {
     const errorPayload = (await response.json().catch(() => null)) as unknown;
+    const errorCode = extractErrorCode(errorPayload);
+    if (response.status === 404 || errorCode === "SERIES_NOT_FOUND") {
+      notFound();
+    }
+
     throw new Error(extractErrorMessage(errorPayload, response.status));
   }
 
