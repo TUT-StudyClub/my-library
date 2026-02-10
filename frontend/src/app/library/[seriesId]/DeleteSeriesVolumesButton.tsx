@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
+import { buildUserFacingApiErrorMessage } from "@/lib/apiError";
 import { publishLibraryRefreshSignal } from "@/lib/libraryRefreshSignal";
 import styles from "./page.module.css";
 
@@ -13,25 +14,6 @@ type DeleteSeriesVolumesButtonProps = {
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const DEFAULT_DELETE_ERROR_MESSAGE = "全巻削除に失敗しました。";
 const DELETE_REQUEST_ERROR_MESSAGE = "削除リクエストの送信に失敗しました。";
-
-function extractDeleteErrorMessage(errorPayload: unknown, statusCode: number): string {
-  if (
-    typeof errorPayload === "object" &&
-    errorPayload !== null &&
-    "error" in errorPayload &&
-    typeof errorPayload.error === "object" &&
-    errorPayload.error !== null &&
-    "message" in errorPayload.error &&
-    typeof errorPayload.error.message === "string"
-  ) {
-    const message = errorPayload.error.message.trim();
-    if (message !== "") {
-      return message;
-    }
-  }
-
-  return `${DEFAULT_DELETE_ERROR_MESSAGE} (status: ${statusCode})`;
-}
 
 export function DeleteSeriesVolumesButton({
   seriesId,
@@ -68,7 +50,13 @@ export function DeleteSeriesVolumesButton({
 
       if (!response.ok) {
         const errorPayload = (await response.json().catch(() => null)) as unknown;
-        throw new Error(extractDeleteErrorMessage(errorPayload, response.status));
+        throw new Error(
+          buildUserFacingApiErrorMessage({
+            errorPayload,
+            statusCode: response.status,
+            fallbackMessage: DEFAULT_DELETE_ERROR_MESSAGE,
+          })
+        );
       }
 
       publishLibraryRefreshSignal();
