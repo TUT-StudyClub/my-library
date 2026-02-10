@@ -1,3 +1,4 @@
+import logging
 import sqlite3
 
 import pytest
@@ -123,10 +124,13 @@ def test_create_volume_returns_conflict_when_isbn_already_exists(monkeypatch, tm
     }
 
 
-def test_create_volume_returns_conflict_when_unique_constraint_is_raised(monkeypatch, tmp_path):
+def test_create_volume_returns_conflict_when_unique_constraint_is_raised(
+    monkeypatch, tmp_path, caplog
+):
     """UNIQUE制約違反を捕捉して 409 の統一エラーを返す."""
     db_path = tmp_path / "library.db"
     monkeypatch.setenv("DB_PATH", str(db_path))
+    caplog.set_level(logging.WARNING, logger="src.main")
 
     def fetch_catalog_volume(_isbn: str) -> main.CatalogVolumeMetadata:
         return main.CatalogVolumeMetadata(
@@ -156,6 +160,10 @@ def test_create_volume_returns_conflict_when_unique_constraint_is_raised(monkeyp
             "details": {},
         }
     }
+    assert any(
+        "重要イベント: DB制約違反" in record.message and "VOLUME_ALREADY_EXISTS" in record.message
+        for record in caplog.records
+    )
 
 
 def test_create_volume_rejects_invalid_isbn(monkeypatch, tmp_path):
@@ -176,10 +184,13 @@ def test_create_volume_rejects_invalid_isbn(monkeypatch, tmp_path):
     }
 
 
-def test_create_volume_returns_external_failure_details_when_ndl_timeout(monkeypatch, tmp_path):
+def test_create_volume_returns_external_failure_details_when_ndl_timeout(
+    monkeypatch, tmp_path, caplog
+):
     """外部タイムアウト時、呼び出し側判定用の失敗情報を返す."""
     db_path = tmp_path / "library.db"
     monkeypatch.setenv("DB_PATH", str(db_path))
+    caplog.set_level(logging.ERROR, logger="src.main")
 
     def raise_ndl_timeout(_isbn: str) -> main.CatalogVolumeMetadata:
         raise ndl_client.NdlClientError(
@@ -214,6 +225,10 @@ def test_create_volume_returns_external_failure_details_when_ndl_timeout(monkeyp
             },
         }
     }
+    assert any(
+        "重要イベント: 外部API失敗" in record.message and "NDL_API_TIMEOUT" in record.message
+        for record in caplog.records
+    )
 
 
 @pytest.mark.parametrize(
