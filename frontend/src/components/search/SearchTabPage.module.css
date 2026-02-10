@@ -238,8 +238,10 @@
 .registerActionButton {
   align-items: center;
   background: #0f172a;
+  border: none;
   border-radius: 9999px;
   color: #f8fafc;
+  cursor: pointer;
   display: inline-flex;
   font-size: 0.8rem;
   font-weight: 600;
@@ -250,6 +252,29 @@
 
 .registerActionButton:hover {
   background: #1e293b;
+}
+
+.registerActionButton:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+.registerFeedbackText {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  margin: 0 0 8px;
+}
+
+.registerFeedbackSuccess {
+  color: #15803d;
+}
+
+.registerFeedbackInfo {
+  color: #1d4ed8;
+}
+
+.registerFeedbackError {
+  color: #b91c1c;
 }
 
 .resultMeta {
