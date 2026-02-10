@@ -10,6 +10,9 @@ type SeriesDetailErrorPageProps = {
 };
 
 export default function SeriesDetailErrorPage({ error, reset }: SeriesDetailErrorPageProps) {
+  const normalizedErrorMessage = error.message.trim();
+  const hasErrorDetail = normalizedErrorMessage !== "";
+
   useEffect(() => {
     console.error(error);
   }, [error]);
@@ -19,13 +22,14 @@ export default function SeriesDetailErrorPage({ error, reset }: SeriesDetailErro
       <div className={styles.container}>
         <header className={styles.header}>
           <h1 className={styles.title}>シリーズ詳細</h1>
-          <p className={styles.seriesId}>エラーが発生しました</p>
+          <p className={styles.seriesId}>状態: 取得失敗</p>
         </header>
 
-        <section className={styles.errorPanel}>
+        <section aria-live="assertive" className={styles.errorPanel} role="alert">
           <p className={styles.errorText}>
-            ページの表示に失敗しました。時間をおいて再試行してください。
+            シリーズ詳細の取得に失敗しました。時間をおいて再試行してください。
           </p>
+          {hasErrorDetail && <p className={styles.errorDetail}>詳細: {normalizedErrorMessage}</p>}
           <div className={styles.errorActions}>
             <button className={styles.retryButton} onClick={reset} type="button">
               再試行
