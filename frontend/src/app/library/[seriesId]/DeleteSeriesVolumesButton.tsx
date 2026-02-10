@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { buildUserFacingApiErrorMessage } from "@/lib/apiError";
+import { buildUserFacingApiErrorMessage, extractApiErrorCode } from "@/lib/apiError";
 import { publishLibraryRefreshSignal } from "@/lib/libraryRefreshSignal";
 import styles from "./page.module.css";
 
@@ -50,6 +50,14 @@ export function DeleteSeriesVolumesButton({
 
       if (!response.ok) {
         const errorPayload = (await response.json().catch(() => null)) as unknown;
+        const errorCode = extractApiErrorCode(errorPayload);
+        if (response.status === 404 && errorCode === "SERIES_NOT_FOUND") {
+          publishLibraryRefreshSignal();
+          router.replace("/library");
+          router.refresh();
+          return;
+        }
+
         throw new Error(
           buildUserFacingApiErrorMessage({
             errorPayload,
