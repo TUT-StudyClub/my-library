@@ -126,6 +126,28 @@ function extractRegisterErrorCode(errorPayload: unknown): string | null {
   return null;
 }
 
+function extractRegisterConflictIsbn(errorPayload: unknown): string | null {
+  if (
+    typeof errorPayload === "object" &&
+    errorPayload !== null &&
+    "error" in errorPayload &&
+    typeof errorPayload.error === "object" &&
+    errorPayload.error !== null &&
+    "details" in errorPayload.error &&
+    typeof errorPayload.error.details === "object" &&
+    errorPayload.error.details !== null &&
+    "isbn" in errorPayload.error.details &&
+    typeof errorPayload.error.details.isbn === "string"
+  ) {
+    const isbn = errorPayload.error.details.isbn.trim();
+    if (isbn !== "") {
+      return isbn;
+    }
+  }
+
+  return null;
+}
+
 function extractRegisteredIsbn(payload: unknown): string | null {
   if (
     typeof payload === "object" &&
@@ -162,6 +184,39 @@ function extractRegisteredSeriesTitle(payload: unknown): string | null {
   }
 
   return null;
+}
+
+function getCandidateKey(candidate: CatalogSearchCandidate, index: number): string {
+  return `${candidate.isbn ?? "unknown"}-${index}`;
+}
+
+function markCandidatesOwnedByIsbn(
+  currentCandidates: CatalogSearchCandidate[],
+  targetCandidateKey: string,
+  requestedIsbn: string,
+  matchedIsbn: string | null
+): CatalogSearchCandidate[] {
+  return currentCandidates.map((currentCandidate, currentIndex) => {
+    const currentCandidateKey = getCandidateKey(currentCandidate, currentIndex);
+    if (currentCandidateKey === targetCandidateKey) {
+      return {
+        ...currentCandidate,
+        owned: true,
+      };
+    }
+
+    if (
+      currentCandidate.isbn === requestedIsbn ||
+      (matchedIsbn !== null && currentCandidate.isbn === matchedIsbn)
+    ) {
+      return {
+        ...currentCandidate,
+        owned: true,
+      };
+    }
+
+    return currentCandidate;
+  });
 }
 
 export function SearchTabPage() {
@@ -293,15 +348,9 @@ export function SearchTabPage() {
         const errorPayload = (await response.json().catch(() => null)) as unknown;
         const registerErrorCode = extractRegisterErrorCode(errorPayload);
         if (response.status === 409 && registerErrorCode === "VOLUME_ALREADY_EXISTS") {
+          const conflictIsbn = extractRegisterConflictIsbn(errorPayload);
           setCandidates((currentCandidates) =>
-            currentCandidates.map((currentCandidate) =>
-              currentCandidate.isbn === requestIsbn
-                ? {
-                    ...currentCandidate,
-                    owned: true,
-                  }
-                : currentCandidate
-            )
+            markCandidatesOwnedByIsbn(currentCandidates, candidateKey, requestIsbn, conflictIsbn)
           );
           setRegisterFeedbackByCandidateKey((currentValue) => ({
             ...currentValue,
@@ -334,14 +383,7 @@ export function SearchTabPage() {
           : `${REGISTER_SUCCESS_MESSAGE}（${registeredSeriesTitle} / ISBN: ${registeredIsbn}）`;
 
       setCandidates((currentCandidates) =>
-        currentCandidates.map((currentCandidate) =>
-          currentCandidate.isbn === requestIsbn || currentCandidate.isbn === registeredIsbn
-            ? {
-                ...currentCandidate,
-                owned: true,
-              }
-            : currentCandidate
-        )
+        markCandidatesOwnedByIsbn(currentCandidates, candidateKey, requestIsbn, registeredIsbn)
       );
       setRegisterFeedbackByCandidateKey((currentValue) => ({
         ...currentValue,
@@ -431,7 +473,7 @@ export function SearchTabPage() {
                 </p>
                 <ul className={styles.resultList}>
                   {candidates.map((candidate, index) => {
-                    const candidateKey = `${candidate.isbn ?? "unknown"}-${index}`;
+                    const candidateKey = getCandidateKey(candidate, index);
                     const canRegisterCandidate =
                       candidate.owned === false && candidate.isbn !== null;
                     const registerFeedback = registerFeedbackByCandidateKey[candidateKey];
