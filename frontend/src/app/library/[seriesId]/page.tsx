@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { DeleteSeriesVolumesButton } from "./DeleteSeriesVolumesButton";
 import { RegisteredVolumesSection } from "./RegisteredVolumesSection";
 import { SeriesCandidatesSection } from "./SeriesCandidatesSection";
 import styles from "./page.module.css";
@@ -139,18 +140,28 @@ export default async function SeriesDetailPage({ params }: SeriesDetailPageProps
         </p>
 
         <header className={styles.header}>
-          <h1 className={styles.title}>{seriesDetail.title}</h1>
-          <p className={styles.seriesId}>seriesId: {normalizedSeriesId}</p>
-          <dl className={styles.seriesMetaList}>
-            <div className={styles.seriesMetaRow}>
-              <dt className={styles.seriesMetaLabel}>著者</dt>
-              <dd className={styles.seriesMetaValue}>{seriesDetail.author ?? "不明"}</dd>
+          <div className={styles.headerMain}>
+            <div className={styles.headerInfo}>
+              <h1 className={styles.title}>{seriesDetail.title}</h1>
+              <p className={styles.seriesId}>seriesId: {normalizedSeriesId}</p>
+              <dl className={styles.seriesMetaList}>
+                <div className={styles.seriesMetaRow}>
+                  <dt className={styles.seriesMetaLabel}>著者</dt>
+                  <dd className={styles.seriesMetaValue}>{seriesDetail.author ?? "不明"}</dd>
+                </div>
+                <div className={styles.seriesMetaRow}>
+                  <dt className={styles.seriesMetaLabel}>出版社</dt>
+                  <dd className={styles.seriesMetaValue}>{seriesDetail.publisher ?? "不明"}</dd>
+                </div>
+              </dl>
             </div>
-            <div className={styles.seriesMetaRow}>
-              <dt className={styles.seriesMetaLabel}>出版社</dt>
-              <dd className={styles.seriesMetaValue}>{seriesDetail.publisher ?? "不明"}</dd>
+            <div className={styles.headerActions}>
+              <DeleteSeriesVolumesButton
+                seriesId={normalizedSeriesId}
+                seriesTitle={seriesDetail.title}
+              />
             </div>
-          </dl>
+          </div>
         </header>
 
         <div className={styles.volumeRows}>
