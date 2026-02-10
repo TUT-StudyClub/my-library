@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
 import styles from "./SearchTabPage.module.css";
 
 type CatalogSearchCandidate = {
@@ -15,9 +15,18 @@ type CatalogSearchCandidate = {
 };
 
 type SearchResultStatus = "idle" | "loading" | "error" | "empty" | "success";
+type RegisterFeedbackTone = "success" | "info" | "error";
+type RegisterFeedback = {
+  tone: RegisterFeedbackTone;
+  message: string;
+};
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const DEFAULT_SEARCH_ERROR_MESSAGE = "検索に失敗しました。";
+const DEFAULT_REGISTER_ERROR_MESSAGE = "登録に失敗しました。";
+const REGISTER_REQUEST_ERROR_MESSAGE = "登録リクエストの送信に失敗しました。";
+const REGISTER_SUCCESS_MESSAGE = "登録完了";
+const REGISTER_ALREADY_EXISTS_MESSAGE = "このISBNは既に登録済みです。";
 const SEARCH_LIMIT = 20;
 
 function getOwnedLabel(owned: CatalogSearchCandidate["owned"]): string {
@@ -43,6 +52,10 @@ function getCandidateOwnedLabel(candidate: CatalogSearchCandidate): string {
 function getRegistrationAvailabilityLabel(candidate: CatalogSearchCandidate): string {
   if (candidate.isbn === null) {
     return "ISBNがないため、この候補は登録できません。";
+  }
+
+  if (candidate.owned === true) {
+    return "所持済みのため登録不要です。";
   }
 
   if (candidate.owned === false) {
@@ -71,6 +84,82 @@ function extractSearchErrorMessage(errorPayload: unknown, statusCode: number): s
   return `${DEFAULT_SEARCH_ERROR_MESSAGE} (status: ${statusCode})`;
 }
 
+function extractRegisterErrorMessage(errorPayload: unknown, statusCode: number): string {
+  if (
+    typeof errorPayload === "object" &&
+    errorPayload !== null &&
+    "error" in errorPayload &&
+    typeof errorPayload.error === "object" &&
+    errorPayload.error !== null &&
+    "message" in errorPayload.error &&
+    typeof errorPayload.error.message === "string"
+  ) {
+    const message = errorPayload.error.message.trim();
+    if (message !== "") {
+      return message;
+    }
+  }
+
+  return `${DEFAULT_REGISTER_ERROR_MESSAGE} (status: ${statusCode})`;
+}
+
+function extractRegisterErrorCode(errorPayload: unknown): string | null {
+  if (
+    typeof errorPayload === "object" &&
+    errorPayload !== null &&
+    "error" in errorPayload &&
+    typeof errorPayload.error === "object" &&
+    errorPayload.error !== null &&
+    "code" in errorPayload.error &&
+    typeof errorPayload.error.code === "string"
+  ) {
+    const code = errorPayload.error.code.trim();
+    if (code !== "") {
+      return code;
+    }
+  }
+
+  return null;
+}
+
+function extractRegisteredIsbn(payload: unknown): string | null {
+  if (
+    typeof payload === "object" &&
+    payload !== null &&
+    "volume" in payload &&
+    typeof payload.volume === "object" &&
+    payload.volume !== null &&
+    "isbn" in payload.volume &&
+    typeof payload.volume.isbn === "string"
+  ) {
+    const isbn = payload.volume.isbn.trim();
+    if (isbn !== "") {
+      return isbn;
+    }
+  }
+
+  return null;
+}
+
+function extractRegisteredSeriesTitle(payload: unknown): string | null {
+  if (
+    typeof payload === "object" &&
+    payload !== null &&
+    "series" in payload &&
+    typeof payload.series === "object" &&
+    payload.series !== null &&
+    "title" in payload.series &&
+    typeof payload.series.title === "string"
+  ) {
+    const title = payload.series.title.trim();
+    if (title !== "") {
+      return title;
+    }
+  }
+
+  return null;
+}
+
 export function SearchTabPage() {
   const [query, setQuery] = useState("");
   const [executedQuery, setExecutedQuery] = useState<string | null>(null);
@@ -78,6 +167,11 @@ export function SearchTabPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<CatalogSearchCandidate[]>([]);
+  const [registeringCandidateKey, setRegisteringCandidateKey] = useState<string | null>(null);
+  const [registerFeedbackByCandidateKey, setRegisterFeedbackByCandidateKey] = useState<
+    Record<string, RegisterFeedback>
+  >({});
+  const isRegisteringRef = useRef(false);
 
   const normalizedQuery = query.trim();
   const displayedQuery = executedQuery ?? "";
@@ -110,6 +204,8 @@ export function SearchTabPage() {
     setExecutedQuery(searchQuery);
     setIsLoading(true);
     setErrorMessage(null);
+    setRegisteringCandidateKey(null);
+    setRegisterFeedbackByCandidateKey({});
 
     try {
       const requestUrl = new URL("/api/catalog/search", API_BASE_URL);
@@ -157,6 +253,111 @@ export function SearchTabPage() {
     }
 
     void executeSearch(executedQuery);
+  };
+
+  const registerCandidate = async (candidate: CatalogSearchCandidate, candidateKey: string) => {
+    if (
+      candidate.owned !== false ||
+      candidate.isbn === null ||
+      registeringCandidateKey !== null ||
+      isRegisteringRef.current
+    ) {
+      return;
+    }
+
+    const requestIsbn = candidate.isbn;
+    isRegisteringRef.current = true;
+    setRegisteringCandidateKey(candidateKey);
+    setRegisterFeedbackByCandidateKey((currentValue) => {
+      const nextValue = { ...currentValue };
+      delete nextValue[candidateKey];
+      return nextValue;
+    });
+
+    try {
+      const response = await fetch(new URL("/api/volumes", API_BASE_URL).toString(), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          isbn: requestIsbn,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorPayload = (await response.json().catch(() => null)) as unknown;
+        const registerErrorCode = extractRegisterErrorCode(errorPayload);
+        if (response.status === 409 && registerErrorCode === "VOLUME_ALREADY_EXISTS") {
+          setCandidates((currentCandidates) =>
+            currentCandidates.map((currentCandidate) =>
+              currentCandidate.isbn === requestIsbn
+                ? {
+                    ...currentCandidate,
+                    owned: true,
+                  }
+                : currentCandidate
+            )
+          );
+          setRegisterFeedbackByCandidateKey((currentValue) => ({
+            ...currentValue,
+            [candidateKey]: {
+              tone: "info",
+              message: REGISTER_ALREADY_EXISTS_MESSAGE,
+            },
+          }));
+          return;
+        }
+
+        setRegisterFeedbackByCandidateKey((currentValue) => ({
+          ...currentValue,
+          [candidateKey]: {
+            tone: "error",
+            message: extractRegisterErrorMessage(errorPayload, response.status),
+          },
+        }));
+        return;
+      }
+
+      const successPayload = (await response.json().catch(() => null)) as unknown;
+      const registeredIsbn = extractRegisteredIsbn(successPayload) ?? requestIsbn;
+      const registeredSeriesTitle = extractRegisteredSeriesTitle(successPayload);
+      const successMessage =
+        registeredSeriesTitle === null
+          ? `${REGISTER_SUCCESS_MESSAGE}（ISBN: ${registeredIsbn}）`
+          : `${REGISTER_SUCCESS_MESSAGE}（${registeredSeriesTitle} / ISBN: ${registeredIsbn}）`;
+
+      setCandidates((currentCandidates) =>
+        currentCandidates.map((currentCandidate) =>
+          currentCandidate.isbn === requestIsbn || currentCandidate.isbn === registeredIsbn
+            ? {
+                ...currentCandidate,
+                owned: true,
+              }
+            : currentCandidate
+        )
+      );
+      setRegisterFeedbackByCandidateKey((currentValue) => ({
+        ...currentValue,
+        [candidateKey]: {
+          tone: "success",
+          message: successMessage,
+        },
+      }));
+    } catch {
+      setRegisterFeedbackByCandidateKey((currentValue) => ({
+        ...currentValue,
+        [candidateKey]: {
+          tone: "error",
+          message: REGISTER_REQUEST_ERROR_MESSAGE,
+        },
+      }));
+    } finally {
+      isRegisteringRef.current = false;
+      setRegisteringCandidateKey((currentValue) =>
+        currentValue === candidateKey ? null : currentValue
+      );
+    }
   };
 
   return (
@@ -222,16 +423,21 @@ export function SearchTabPage() {
                 </p>
                 <ul className={styles.resultList}>
                   {candidates.map((candidate, index) => {
-                    const registerPageUrl =
-                      candidate.owned === false && candidate.isbn !== null
-                        ? `/library/register?isbn=${encodeURIComponent(candidate.isbn)}`
-                        : null;
+                    const candidateKey = `${candidate.isbn ?? "unknown"}-${index}`;
+                    const canRegisterCandidate =
+                      candidate.owned === false && candidate.isbn !== null;
+                    const registerFeedback = registerFeedbackByCandidateKey[candidateKey];
+                    const registerFeedbackClassName =
+                      registerFeedback === undefined
+                        ? null
+                        : registerFeedback.tone === "success"
+                          ? `${styles.registerFeedbackText} ${styles.registerFeedbackSuccess}`
+                          : registerFeedback.tone === "info"
+                            ? `${styles.registerFeedbackText} ${styles.registerFeedbackInfo}`
+                            : `${styles.registerFeedbackText} ${styles.registerFeedbackError}`;
 
                     return (
-                      <li
-                        className={styles.resultItem}
-                        key={`${candidate.isbn ?? "unknown"}-${index}`}
-                      >
+                      <li className={styles.resultItem} key={candidateKey}>
                         <p className={styles.resultTitle}>{candidate.title}</p>
                         <p className={styles.statusText}>
                           所持判定: {getCandidateOwnedLabel(candidate)}
@@ -239,12 +445,22 @@ export function SearchTabPage() {
                         <p className={styles.statusDetail}>
                           {getRegistrationAvailabilityLabel(candidate)}
                         </p>
-                        {registerPageUrl !== null && (
+                        {canRegisterCandidate && (
                           <p className={styles.registerActionRow}>
-                            <Link className={styles.registerActionButton} href={registerPageUrl}>
-                              登録を開始
-                            </Link>
+                            <button
+                              className={styles.registerActionButton}
+                              disabled={registeringCandidateKey !== null}
+                              onClick={() => {
+                                void registerCandidate(candidate, candidateKey);
+                              }}
+                              type="button"
+                            >
+                              {registeringCandidateKey === candidateKey ? "登録中..." : "登録する"}
+                            </button>
                           </p>
+                        )}
+                        {registerFeedbackClassName !== null && (
+                          <p className={registerFeedbackClassName}>{registerFeedback.message}</p>
                         )}
                         <p className={styles.resultMeta}>
                           著者: {candidate.author ?? "不明"} / 出版社:{" "}
