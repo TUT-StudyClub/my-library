@@ -50,7 +50,8 @@
 - backend起動時に以下を自動実行:
   - DBファイル作成（必要時）
   - 最小スキーマ作成（`series`, `volume`）
-  - インデックス作成（`idx_series_title`, `idx_series_author`, `idx_volume_series_id`）
+  - インデックス作成（`idx_series_title`, `idx_series_author`, `idx_series_identity`, `idx_volume_series_id`）
+  - `series` の重複（`title + author + publisher`）があれば `volume.series_id` を寄せて統合
   - `PRAGMA foreign_keys = ON`
 - `/health` はDB疎通チェックを実行し、失敗時は `503` を返す
 - DB実ファイルはコミットしない（`backend/.gitignore` で除外）
