@@ -654,7 +654,16 @@ def _extract_unregistered_series_candidates(
 def _find_or_create_series(
     connection: sqlite3.Connection, title: str, author: Optional[str], publisher: Optional[str]
 ) -> SeriesResponse:
-    """同一メタデータの Series を再利用し、無ければ新規作成する."""
+    """同一メタデータの Series を原子的に再利用し、無ければ新規作成する."""
+    connection.execute(
+        """
+        INSERT INTO series (title, author, publisher)
+        VALUES (?, ?, ?)
+        ON CONFLICT DO NOTHING;
+        """,
+        (title, author, publisher),
+    )
+
     row = connection.execute(
         """
         SELECT id, title, author, publisher
@@ -668,34 +677,14 @@ def _find_or_create_series(
         (title, author, publisher),
     ).fetchone()
 
-    if row is not None:
-        return SeriesResponse(id=row[0], title=row[1], author=row[2], publisher=row[3])
-
-    cursor = connection.execute(
-        """
-        INSERT INTO series (title, author, publisher)
-        VALUES (?, ?, ?);
-        """,
-        (title, author, publisher),
-    )
-    series_id = cursor.lastrowid
-    created_row = connection.execute(
-        """
-        SELECT id, title, author, publisher
-        FROM series
-        WHERE id = ?;
-        """,
-        (series_id,),
-    ).fetchone()
-
-    if created_row is None:
+    if row is None:
         raise HTTPException(status_code=500, detail="failed to create series")
 
     return SeriesResponse(
-        id=created_row[0],
-        title=created_row[1],
-        author=created_row[2],
-        publisher=created_row[3],
+        id=row[0],
+        title=row[1],
+        author=row[2],
+        publisher=row[3],
     )
 
 

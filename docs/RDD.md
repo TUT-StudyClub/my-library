@@ -249,6 +249,7 @@
 ## **7.2 制約**
 
 * `Volume.isbn` ユニーク（重複登録防止）  
+* `Series` は `title + author + publisher`（`author`/`publisher` は `null` を空文字同等扱い）でユニーク（重複Series防止）  
 * `Volume.isbn` は正規化済みの半角数字13桁のみ保存する  
 * `Volume.cover_url` はURL文字列のみ保存し、画像バイナリ（BLOB/Base64/ファイル）は保存しない  
 * `series_id` 外部キー（SQLiteのFK有効化が前提）
