@@ -692,21 +692,19 @@ export function SearchTabPage() {
                     )}
                   </section>
 
-                  <section className={styles.resultRowSection}>
-                    <div className={styles.resultRowHeader}>
-                      <h3 className={styles.resultRowTitle}>登録済み</h3>
-                      <p className={styles.resultRowCount}>{ownedCandidateEntries.length} 件</p>
-                    </div>
-                    {ownedCandidateEntries.length === 0 ? (
-                      <p className={styles.resultRowEmpty}>登録済みの候補はありません。</p>
-                    ) : (
+                  {ownedCandidateEntries.length > 0 && (
+                    <section className={styles.resultRowSection}>
+                      <div className={styles.resultRowHeader}>
+                        <h3 className={styles.resultRowTitle}>登録済み</h3>
+                        <p className={styles.resultRowCount}>{ownedCandidateEntries.length} 件</p>
+                      </div>
                       <ul className={styles.horizontalResultList}>
                         {ownedCandidateEntries.map(({ candidate, candidateKey }) =>
                           renderCandidateItem(candidate, candidateKey)
                         )}
                       </ul>
-                    )}
-                  </section>
+                    </section>
+                  )}
                 </div>
               </>
             )}
