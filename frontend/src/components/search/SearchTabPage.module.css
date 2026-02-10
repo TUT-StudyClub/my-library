@@ -259,22 +259,42 @@
   cursor: not-allowed;
 }
 
-.registerFeedbackText {
+.registerFeedbackPanel {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+}
+
+.registerFeedbackTitle {
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 0 0 2px;
+}
+
+.registerFeedbackMessage {
   font-size: 0.82rem;
   line-height: 1.45;
-  margin: 0 0 8px;
+  margin: 0;
 }
 
 .registerFeedbackSuccess {
-  color: #15803d;
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #166534;
 }
 
 .registerFeedbackInfo {
-  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1e40af;
 }
 
 .registerFeedbackError {
-  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #991b1b;
 }
 
 .resultMeta {
