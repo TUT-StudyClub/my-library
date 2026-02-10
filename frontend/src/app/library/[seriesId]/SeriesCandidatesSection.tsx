@@ -112,6 +112,7 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [selectedCandidate, setSelectedCandidate] = useState<SeriesCandidate | null>(null);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -120,6 +121,7 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
     const fetchCandidates = async () => {
       setIsLoading(true);
       setErrorMessage(null);
+      setSelectedCandidate(null);
 
       try {
         const requestUrl = new URL(`/api/series/${seriesId}/candidates`, API_BASE_URL);
@@ -163,6 +165,24 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
       abortController.abort();
     };
   }, [reloadKey, seriesId]);
+
+  useEffect(() => {
+    if (selectedCandidate === null) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSelectedCandidate(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [selectedCandidate]);
 
   if (isLoading) {
     return (
@@ -209,17 +229,31 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
     );
   }
 
+  const formatVolumeNumber = (volumeNumber: number | null): string =>
+    volumeNumber === null ? "巻数不明" : `${volumeNumber}巻`;
+
   return (
     <section className={styles.volumeSection}>
       <h2 className={styles.sectionTitle}>未登録候補</h2>
       <ul className={styles.candidateList}>
         {candidates.map((candidate) => (
           <li className={styles.candidateListItem} key={candidate.isbn}>
-            <article className={styles.volumeCard}>
+            <article
+              className={`${styles.volumeCard} ${styles.candidateCardInteractive}`}
+              onClick={() => {
+                setSelectedCandidate(candidate);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setSelectedCandidate(candidate);
+                }
+              }}
+              role="button"
+              tabIndex={0}
+            >
               <h3 className={styles.candidateTitle}>{candidate.title}</h3>
-              <p className={styles.volumeNumber}>
-                {candidate.volume_number === null ? "巻数不明" : `${candidate.volume_number}巻`}
-              </p>
+              <p className={styles.volumeNumber}>{formatVolumeNumber(candidate.volume_number)}</p>
               <dl className={styles.candidateMetaList}>
                 <div className={styles.candidateMetaRow}>
                   <dt className={styles.candidateMetaLabel}>著者</dt>
@@ -235,6 +269,89 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
           </li>
         ))}
       </ul>
+
+      {selectedCandidate !== null ? (
+        <div
+          className={styles.candidateModalOverlay}
+          onClick={() => {
+            setSelectedCandidate(null);
+          }}
+          role="presentation"
+        >
+          <div
+            aria-labelledby={`candidate-detail-title-${selectedCandidate.isbn}`}
+            aria-modal="true"
+            className={styles.candidateModal}
+            onClick={(event) => {
+              event.stopPropagation();
+            }}
+            role="dialog"
+          >
+            <header className={styles.candidateModalHeader}>
+              <h3
+                className={styles.candidateModalTitle}
+                id={`candidate-detail-title-${selectedCandidate.isbn}`}
+              >
+                候補詳細
+              </h3>
+              <button
+                className={styles.candidateModalCloseButton}
+                onClick={() => {
+                  setSelectedCandidate(null);
+                }}
+                type="button"
+              >
+                閉じる
+              </button>
+            </header>
+            <dl className={styles.candidateModalMetaList}>
+              <div className={styles.candidateModalMetaRow}>
+                <dt className={styles.candidateModalMetaLabel}>タイトル</dt>
+                <dd className={styles.candidateModalMetaValue}>{selectedCandidate.title}</dd>
+              </div>
+              <div className={styles.candidateModalMetaRow}>
+                <dt className={styles.candidateModalMetaLabel}>著者</dt>
+                <dd className={styles.candidateModalMetaValue}>
+                  {selectedCandidate.author ?? "不明"}
+                </dd>
+              </div>
+              <div className={styles.candidateModalMetaRow}>
+                <dt className={styles.candidateModalMetaLabel}>出版社</dt>
+                <dd className={styles.candidateModalMetaValue}>
+                  {selectedCandidate.publisher ?? "不明"}
+                </dd>
+              </div>
+              <div className={styles.candidateModalMetaRow}>
+                <dt className={styles.candidateModalMetaLabel}>巻数</dt>
+                <dd className={styles.candidateModalMetaValue}>
+                  {formatVolumeNumber(selectedCandidate.volume_number)}
+                </dd>
+              </div>
+              <div className={styles.candidateModalMetaRow}>
+                <dt className={styles.candidateModalMetaLabel}>ISBN</dt>
+                <dd className={styles.candidateModalMetaValue}>{selectedCandidate.isbn}</dd>
+              </div>
+              <div className={styles.candidateModalMetaRow}>
+                <dt className={styles.candidateModalMetaLabel}>表紙URL</dt>
+                <dd className={styles.candidateModalMetaValue}>
+                  {selectedCandidate.cover_url === null ? (
+                    "不明"
+                  ) : (
+                    <a
+                      className={styles.candidateModalCoverLink}
+                      href={selectedCandidate.cover_url}
+                      rel="noopener noreferrer"
+                      target="_blank"
+                    >
+                      {selectedCandidate.cover_url}
+                    </a>
+                  )}
+                </dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
