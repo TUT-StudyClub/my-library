@@ -574,6 +574,9 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
     );
   }
 
+  const selectedCandidateCoverUrl =
+    selectedCandidate === null ? null : normalizeCoverUrl(selectedCandidate.cover_url);
+
   return (
     <section className={styles.volumeSection}>
       <h2 className={styles.sectionTitle}>未登録候補</h2>
@@ -672,16 +675,16 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
               <div className={styles.candidateModalMetaRow}>
                 <dt className={styles.candidateModalMetaLabel}>表紙URL</dt>
                 <dd className={styles.candidateModalMetaValue}>
-                  {selectedCandidate.cover_url === null ? (
+                  {selectedCandidateCoverUrl === null ? (
                     "不明"
                   ) : (
                     <a
                       className={styles.candidateModalCoverLink}
-                      href={selectedCandidate.cover_url}
+                      href={selectedCandidateCoverUrl}
                       rel="noopener noreferrer"
                       target="_blank"
                     >
-                      {selectedCandidate.cover_url}
+                      {selectedCandidateCoverUrl}
                     </a>
                   )}
                 </dd>
