@@ -3,6 +3,7 @@
 import Image, { type ImageLoaderProps } from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { buildUserFacingApiErrorMessage, extractApiErrorCode } from "@/lib/apiError";
 import { publishLibraryRefreshSignal } from "@/lib/libraryRefreshSignal";
 import { publishSeriesVolumeRegistered, type SeriesVolume } from "@/lib/seriesVolumeSignal";
 import styles from "./page.module.css";
@@ -101,69 +102,12 @@ function CandidateCover({ title, coverUrl, volumeNumber }: CandidateCoverProps) 
   );
 }
 
-function extractErrorMessage(errorPayload: unknown, statusCode: number): string {
-  if (
-    typeof errorPayload === "object" &&
-    errorPayload !== null &&
-    "error" in errorPayload &&
-    typeof errorPayload.error === "object" &&
-    errorPayload.error !== null &&
-    "message" in errorPayload.error &&
-    typeof errorPayload.error.message === "string"
-  ) {
-    const message = errorPayload.error.message.trim();
-    if (message !== "") {
-      return message;
-    }
-  }
-
-  return `${DEFAULT_FETCH_ERROR_MESSAGE} (status: ${statusCode})`;
-}
-
 function normalizeErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim() !== "") {
     return error.message;
   }
 
   return DEFAULT_FETCH_ERROR_MESSAGE;
-}
-
-function extractRegisterErrorMessage(errorPayload: unknown, statusCode: number): string {
-  if (
-    typeof errorPayload === "object" &&
-    errorPayload !== null &&
-    "error" in errorPayload &&
-    typeof errorPayload.error === "object" &&
-    errorPayload.error !== null &&
-    "message" in errorPayload.error &&
-    typeof errorPayload.error.message === "string"
-  ) {
-    const message = errorPayload.error.message.trim();
-    if (message !== "") {
-      return message;
-    }
-  }
-
-  return `${DEFAULT_REGISTER_ERROR_MESSAGE} (status: ${statusCode})`;
-}
-
-function extractRegisterErrorCode(errorPayload: unknown): string | null {
-  if (
-    typeof errorPayload === "object" &&
-    errorPayload !== null &&
-    "error" in errorPayload &&
-    typeof errorPayload.error === "object" &&
-    errorPayload.error !== null &&
-    "code" in errorPayload.error &&
-    typeof errorPayload.error.code === "string"
-  ) {
-    const errorCode = errorPayload.error.code.trim();
-    if (errorCode !== "") {
-      return errorCode;
-    }
-  }
-
-  return null;
 }
 
 function extractRegisteredIsbn(payload: unknown): string | null {
@@ -357,7 +301,13 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
         });
         if (!response.ok) {
           const errorPayload = (await response.json().catch(() => null)) as unknown;
-          throw new Error(extractErrorMessage(errorPayload, response.status));
+          throw new Error(
+            buildUserFacingApiErrorMessage({
+              errorPayload,
+              statusCode: response.status,
+              fallbackMessage: DEFAULT_FETCH_ERROR_MESSAGE,
+            })
+          );
         }
 
         const payload = (await response.json()) as unknown;
@@ -477,7 +427,7 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
 
       if (!response.ok) {
         const errorPayload = (await response.json().catch(() => null)) as unknown;
-        const registerErrorCode = extractRegisterErrorCode(errorPayload);
+        const registerErrorCode = extractApiErrorCode(errorPayload);
 
         if (response.status === 409 && registerErrorCode === "VOLUME_ALREADY_EXISTS") {
           showRegisterResultToast("info", `ISBN: ${targetCandidate.isbn} は既に登録済みです。`);
@@ -492,7 +442,11 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
 
         showRegisterResultToast(
           "error",
-          extractRegisterErrorMessage(errorPayload, response.status)
+          buildUserFacingApiErrorMessage({
+            errorPayload,
+            statusCode: response.status,
+            fallbackMessage: DEFAULT_REGISTER_ERROR_MESSAGE,
+          })
         );
         return;
       }
