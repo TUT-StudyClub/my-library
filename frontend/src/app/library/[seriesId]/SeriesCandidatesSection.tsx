@@ -1,5 +1,6 @@
 "use client";
 
+import Image, { type ImageLoaderProps } from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { publishLibraryRefreshSignal } from "@/lib/libraryRefreshSignal";
@@ -30,6 +31,75 @@ type RegisterResultToast = {
   tone: "success" | "info" | "error";
   message: string;
 };
+
+type CandidateCoverProps = {
+  title: string;
+  coverUrl: string | null;
+  volumeNumber: number | null;
+};
+
+function passthroughImageLoader({ src }: ImageLoaderProps): string {
+  return src;
+}
+
+function normalizeCoverUrl(coverUrl: string | null): string | null {
+  const trimmedCoverUrl = coverUrl?.trim() ?? "";
+  if (trimmedCoverUrl === "") {
+    return null;
+  }
+
+  try {
+    const parsedCoverUrl = new URL(trimmedCoverUrl);
+    if (parsedCoverUrl.protocol !== "http:" && parsedCoverUrl.protocol !== "https:") {
+      return null;
+    }
+
+    return parsedCoverUrl.toString();
+  } catch {
+    return null;
+  }
+}
+
+function formatVolumeNumber(volumeNumber: number | null): string {
+  return volumeNumber === null ? "巻数不明" : `${volumeNumber}巻`;
+}
+
+function CandidateCover({ title, coverUrl, volumeNumber }: CandidateCoverProps) {
+  const normalizedCoverUrl = normalizeCoverUrl(coverUrl);
+  const [isImageLoadFailed, setIsImageLoadFailed] = useState(false);
+
+  useEffect(() => {
+    setIsImageLoadFailed(false);
+  }, [normalizedCoverUrl]);
+
+  const coverImageUrl =
+    normalizedCoverUrl !== null && !isImageLoadFailed ? normalizedCoverUrl : null;
+  const volumeLabel = formatVolumeNumber(volumeNumber);
+
+  return (
+    <div className={styles.candidateCoverArea}>
+      {coverImageUrl !== null ? (
+        <Image
+          alt={`${title} ${volumeLabel} の表紙`}
+          className={styles.candidateCoverImage}
+          fill
+          loader={passthroughImageLoader}
+          onError={() => {
+            setIsImageLoadFailed(true);
+          }}
+          sizes="(max-width: 640px) 72vw, 240px"
+          src={coverImageUrl}
+          unoptimized
+        />
+      ) : (
+        <div aria-hidden="true" className={styles.candidateCoverPlaceholder}>
+          <span className={styles.candidateCoverPlaceholderVolume}>{volumeLabel}</span>
+          <span className={styles.candidateCoverPlaceholderText}>表紙なし</span>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function extractErrorMessage(errorPayload: unknown, statusCode: number): string {
   if (
@@ -487,9 +557,6 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
     );
   }
 
-  const formatVolumeNumber = (volumeNumber: number | null): string =>
-    volumeNumber === null ? "巻数不明" : `${volumeNumber}巻`;
-
   return (
     <section className={styles.volumeSection}>
       <h2 className={styles.sectionTitle}>未登録候補</h2>
@@ -510,6 +577,11 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
               role="button"
               tabIndex={0}
             >
+              <CandidateCover
+                coverUrl={candidate.cover_url}
+                title={candidate.title}
+                volumeNumber={candidate.volume_number}
+              />
               <h3 className={styles.candidateTitle}>{candidate.title}</h3>
               <p className={styles.volumeNumber}>{formatVolumeNumber(candidate.volume_number)}</p>
               <dl className={styles.candidateMetaList}>
