@@ -33,6 +33,21 @@
   padding: 20px;
 }
 
+.headerMain {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.headerInfo {
+  min-width: 0;
+}
+
+.headerActions {
+  flex-shrink: 0;
+}
+
 .title {
   font-size: 1.5rem;
   font-weight: 700;
@@ -69,6 +84,51 @@
   color: #1e293b;
   font-size: 0.92rem;
   margin: 0;
+}
+
+.seriesDangerZone {
+  display: grid;
+  gap: 8px;
+  justify-items: flex-end;
+}
+
+.deleteSeriesButton {
+  appearance: none;
+  background: #b91c1c;
+  border: 1px solid #991b1b;
+  border-radius: 9999px;
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 9px 14px;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.deleteSeriesButton:hover {
+  background: #991b1b;
+  border-color: #7f1d1d;
+}
+
+.deleteSeriesButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+
+.seriesDeleteErrorMessage {
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  color: #7f1d1d;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  margin: 0;
+  max-width: 260px;
+  overflow-wrap: anywhere;
+  padding: 6px 8px;
 }
 
 .volumeRows {
@@ -515,6 +575,18 @@
   .header,
   .volumeSection {
     padding: 16px;
+  }
+
+  .headerMain {
+    flex-direction: column;
+  }
+
+  .headerActions {
+    width: 100%;
+  }
+
+  .seriesDangerZone {
+    justify-items: flex-start;
   }
 
   .candidateList {
