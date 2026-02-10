@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { buildUserFacingApiErrorMessage, extractApiErrorCode } from "@/lib/apiError";
 import { publishLibraryRefreshSignal } from "@/lib/libraryRefreshSignal";
-import { publishSeriesVolumeRegistered, type SeriesVolume } from "@/lib/seriesVolumeSignal";
+import {
+  publishSeriesVolumeRegistered,
+  subscribeSeriesVolumeDeleted,
+  type SeriesVolume,
+} from "@/lib/seriesVolumeSignal";
 import styles from "./page.module.css";
 
 type SeriesCandidate = {
@@ -359,6 +363,16 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
       abortController.abort();
     };
   }, [reloadKey, router, seriesId]);
+
+  useEffect(() => {
+    return subscribeSeriesVolumeDeleted((detail) => {
+      if (detail.seriesId !== seriesId) {
+        return;
+      }
+
+      setReloadKey((currentValue) => currentValue + 1);
+    });
+  }, [seriesId]);
 
   useEffect(() => {
     if (selectedCandidate === null) {
