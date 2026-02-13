@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import { consumeLibraryRefreshSignal } from "@/lib/libraryRefreshSignal";
 import { LibrarySeriesCard } from "./LibrarySeriesCard";
 import styles from "./LibraryTabPage.module.css";
 
@@ -130,18 +132,35 @@ export function LibraryTabPage() {
     };
   }, [normalizedSearchKeyword, reloadKey]);
 
-  const reloadLibrary = () => {
+  const reloadLibrary = useCallback(() => {
     setReloadKey((currentValue) => currentValue + 1);
-  };
+  }, []);
+
+  useEffect(() => {
+    const refreshLibraryIfNeeded = () => {
+      if (consumeLibraryRefreshSignal()) {
+        reloadLibrary();
+      }
+    };
+
+    refreshLibraryIfNeeded();
+    window.addEventListener("focus", refreshLibraryIfNeeded);
+    window.addEventListener("pageshow", refreshLibraryIfNeeded);
+
+    return () => {
+      window.removeEventListener("focus", refreshLibraryIfNeeded);
+      window.removeEventListener("pageshow", refreshLibraryIfNeeded);
+    };
+  }, [reloadLibrary]);
 
   return (
     <main className={styles.page}>
       <div className={styles.container}>
         <header className={styles.header}>
           <h1 className={styles.title}>ライブラリ</h1>
-          <button type="button" className={styles.registerButton}>
+          <Link className={styles.registerButton} href="/library/register">
             登録
-          </button>
+          </Link>
         </header>
 
         <section className={`${styles.section} ${styles.searchSection}`}>
