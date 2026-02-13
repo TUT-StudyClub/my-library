@@ -14,6 +14,7 @@ type LibrarySeries = {
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const DEFAULT_ERROR_MESSAGE = "ライブラリの取得に失敗しました。";
+// 入力停止後300ms待って検索し、タイプ中の過剰リクエストを抑える。
 const SEARCH_DEBOUNCE_MS = 300;
 
 function extractErrorMessage(errorPayload: unknown, statusCode: number): string {
