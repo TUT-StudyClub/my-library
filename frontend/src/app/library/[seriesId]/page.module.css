@@ -1,0 +1,90 @@
+.page {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  color: #0f172a;
+  padding: 24px 16px 40px;
+}
+
+.container {
+  margin: 0 auto;
+  max-width: 1080px;
+}
+
+.backLinkWrapper {
+  margin: 0 0 12px;
+}
+
+.backLink {
+  color: #334155;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.backLink:hover {
+  text-decoration: underline;
+}
+
+.header {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  margin-bottom: 16px;
+  padding: 20px;
+}
+
+.title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+
+.seriesId {
+  color: #475569;
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.placeholderPanel,
+.loadingPanel,
+.errorPanel {
+  align-items: center;
+  background: #ffffff;
+  border: 1px dashed #cbd5e1;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  justify-content: center;
+  min-height: 180px;
+  padding: 20px;
+  text-align: center;
+}
+
+.placeholderText,
+.loadingText,
+.errorText {
+  color: #334155;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.errorActions {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.retryButton {
+  appearance: none;
+  background: #0f172a;
+  border: none;
+  border-radius: 9999px;
+  color: #f8fafc;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 8px 14px;
+}

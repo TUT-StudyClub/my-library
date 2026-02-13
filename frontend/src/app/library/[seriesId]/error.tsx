@@ -1,0 +1,41 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect } from "react";
+import styles from "./page.module.css";
+
+type SeriesDetailErrorPageProps = {
+  error: Error & { digest?: string };
+  reset: () => void;
+};
+
+export default function SeriesDetailErrorPage({ error, reset }: SeriesDetailErrorPageProps) {
+  useEffect(() => {
+    console.error(error);
+  }, [error]);
+
+  return (
+    <main className={styles.page}>
+      <div className={styles.container}>
+        <header className={styles.header}>
+          <h1 className={styles.title}>シリーズ詳細</h1>
+          <p className={styles.seriesId}>エラーが発生しました</p>
+        </header>
+
+        <section className={styles.errorPanel}>
+          <p className={styles.errorText}>
+            ページの表示に失敗しました。時間をおいて再試行してください。
+          </p>
+          <div className={styles.errorActions}>
+            <button className={styles.retryButton} onClick={reset} type="button">
+              再試行
+            </button>
+            <Link className={styles.backLink} href="/library">
+              ライブラリへ戻る
+            </Link>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
