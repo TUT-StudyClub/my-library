@@ -1,0 +1,455 @@
+.page {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  color: #0f172a;
+  padding: 24px 16px 40px;
+}
+
+.container {
+  margin: 0 auto;
+  max-width: 1080px;
+}
+
+.header {
+  margin-bottom: 20px;
+}
+
+.title {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.tabs {
+  background: #e2e8f0;
+  border-radius: 9999px;
+  display: inline-flex;
+  gap: 6px;
+  margin-bottom: 24px;
+  padding: 4px;
+}
+
+.tab {
+  align-items: center;
+  border-radius: 9999px;
+  color: inherit;
+  display: inline-flex;
+  font-size: 0.9rem;
+  font-weight: 600;
+  justify-content: center;
+  padding: 8px 14px;
+  text-decoration: none;
+}
+
+.tabActive {
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+.tabInactive {
+  color: #475569;
+}
+
+.tabInactive:hover {
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.section {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  margin-bottom: 16px;
+  padding: 20px;
+}
+
+.sectionTitle {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.searchLabel {
+  color: #334155;
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.searchForm {
+  margin: 0;
+}
+
+.searchRow {
+  display: flex;
+  gap: 8px;
+}
+
+.searchInput {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  flex: 1;
+  font-size: 1rem;
+  min-width: 0;
+  outline: none;
+  padding: 12px 14px;
+}
+
+.searchInput::placeholder {
+  color: #94a3b8;
+}
+
+.searchButton {
+  appearance: none;
+  background: #0f172a;
+  border: none;
+  border-radius: 10px;
+  color: #f8fafc;
+  font-size: 0.9rem;
+  font-weight: 600;
+  min-width: 86px;
+  padding: 12px 16px;
+}
+
+.searchButton:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+.helperText {
+  color: #64748b;
+  font-size: 0.85rem;
+  margin: 10px 0 0;
+}
+
+.errorText {
+  color: #b91c1c;
+  font-size: 0.85rem;
+  margin: 8px 0 0;
+}
+
+.statePanel {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  display: flex;
+  justify-content: center;
+  min-height: 148px;
+  padding: 16px;
+  text-align: center;
+}
+
+.statePanelIdle {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.statePanelLoading {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.statePanelEmpty {
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
+.statePanelError {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.statePanelList {
+  align-items: stretch;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.stateContent {
+  max-width: 560px;
+}
+
+.stateTitle {
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0 0 6px;
+}
+
+.stateDescription {
+  color: #334155;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.stateDescriptionError {
+  color: #991b1b;
+}
+
+.statusDetail {
+  color: #475569;
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.resultSummary {
+  color: #475569;
+  font-size: 0.85rem;
+  margin: 0 0 10px;
+}
+
+.resultList {
+  display: grid;
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.resultItem {
+  list-style: none;
+}
+
+.resultCard {
+  background: #ffffff;
+  border: 1px solid #dbe6f3;
+  border-radius: 12px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 92px minmax(0, 1fr);
+  padding: 12px;
+}
+
+.resultCoverArea {
+  aspect-ratio: 3 / 4;
+  background: #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+}
+
+.resultCoverImage {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.resultCoverPlaceholder {
+  align-items: center;
+  background: linear-gradient(165deg, #e2e8f0 0%, #f1f5f9 55%, #f8fafc 100%);
+  color: #475569;
+  display: flex;
+  font-size: 0.75rem;
+  font-weight: 700;
+  height: 100%;
+  justify-content: center;
+  letter-spacing: 0.08em;
+  width: 100%;
+}
+
+.resultContent {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.resultHeading {
+  align-items: flex-start;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.resultTitle {
+  color: #0f172a;
+  display: -webkit-box;
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1.45;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.ownedBadge {
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 7px 10px;
+  white-space: nowrap;
+}
+
+.ownedBadgeOwned {
+  background: #e0f2fe;
+  border-color: #7dd3fc;
+  color: #075985;
+}
+
+.ownedBadgeNotOwned {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.ownedBadgeUnknown {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+  color: #374151;
+}
+
+.resultMetaList {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.resultMetaRow {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+  margin: 0;
+}
+
+.resultMetaLabel {
+  color: #64748b;
+  font-size: 0.8rem;
+  font-weight: 600;
+  min-width: 40px;
+}
+
+.resultMetaValue {
+  color: #1e293b;
+  flex: 1;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  margin: 0;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.registerActionRow {
+  margin: 0;
+}
+
+.registerActionButton {
+  align-items: center;
+  background: #0f172a;
+  border: none;
+  border-radius: 9999px;
+  color: #f8fafc;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.8rem;
+  font-weight: 600;
+  justify-content: center;
+  padding: 8px 14px;
+  text-decoration: none;
+}
+
+.registerActionButton:hover:not(:disabled) {
+  background: #1e293b;
+}
+
+.registerActionButton:disabled {
+  background: #cbd5e1;
+  color: #475569;
+  cursor: not-allowed;
+}
+
+.registerFeedbackPanel {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  margin: 0;
+  padding: 8px 10px;
+}
+
+.registerFeedbackTitle {
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 0 0 2px;
+}
+
+.registerFeedbackMessage {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.registerFeedbackSuccess {
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.registerFeedbackInfo {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1e40af;
+}
+
+.registerFeedbackError {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+
+.resultMeta {
+  color: #64748b;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.retryButton {
+  appearance: none;
+  background: #0f172a;
+  border: none;
+  border-radius: 9999px;
+  color: #f8fafc;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-top: 12px;
+  padding: 8px 14px;
+}
+
+@media (max-width: 640px) {
+  .title {
+    font-size: 1.7rem;
+  }
+
+  .searchRow {
+    flex-direction: column;
+  }
+
+  .searchButton {
+    width: 100%;
+  }
+
+  .resultCard {
+    gap: 10px;
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .ownedBadge {
+    font-size: 0.7rem;
+    padding: 6px 9px;
+  }
+
+  .resultMetaLabel {
+    min-width: 36px;
+  }
+}

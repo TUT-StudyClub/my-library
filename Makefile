@@ -1,4 +1,4 @@
-.PHONY: check check-all check-frontend check-backend backend-setup backend-run db-smoke lint format format-check typecheck test
+.PHONY: check check-all check-frontend check-backend frontend-setup frontend-run backend-setup backend-run dev db-smoke lint format format-check typecheck test
 
 FRONTEND_DIR := frontend
 BACKEND_DIR := backend
@@ -47,6 +47,14 @@ check-backend: backend-setup
 	cd $(BACKEND_DIR) && uv run mypy src
 	cd $(BACKEND_DIR) && uv run pytest -q
 
+frontend-setup:
+	@echo "== Frontend setup =="
+	cd $(FRONTEND_DIR) && npm install
+
+frontend-run: frontend-setup
+	@echo "== Frontend app start =="
+	cd $(FRONTEND_DIR) && npm run dev
+
 backend-setup:
 	@echo "== Backend setup =="
 	cd $(BACKEND_DIR) && uv sync --extra dev
@@ -58,6 +66,10 @@ db-smoke: backend-setup
 backend-run: backend-setup
 	@echo "== Backend API start =="
 	cd $(BACKEND_DIR) && uv run python -m src
+
+dev:
+	@echo "== Frontend + Backend start (Ctrl+C で終了) =="
+	$(MAKE) -j2 frontend-run backend-run
 
 lint: backend-setup
 	@echo "== Frontend lint =="

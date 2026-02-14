@@ -74,9 +74,12 @@ npm run dev
 
 ### ルートからの共通コマンド
 
-フロント/バックを一括で実行できます。
+フロント/バックの起動と各種チェックを実行できます。
 
 ```bash
+make frontend-run
+make backend-run
+make dev
 make check
 make check-all
 make lint
@@ -85,11 +88,13 @@ make format-check
 make typecheck
 make test
 make db-smoke
-make backend-run
 ```
 
 `make check` は変更ファイルから対象を判定して実行します（例: `docs/` や `README.md` のみ変更時はスキップ）。  
 常にフルチェックしたい場合は `make check-all` を使ってください。
+
+`make dev` は frontend (`3000`) と backend (`8000`) を同時に起動します。  
+終了する場合は `Ctrl+C` を押してください。
 
 `make db-smoke` は backend 側で Series/Volume を1件ずつ登録し、直後に取得できることを確認します。  
 結果は `backend/data/register_fetch_result.json` に保存されます。
@@ -218,6 +223,8 @@ cp .env.example .env
 uv run python -m src
 # ルートディレクトリから起動する場合:
 # make backend-run
+# frontend も含めて同時起動する場合:
+# make dev
 ```
 
 起動後、以下のエンドポイントが利用可能:

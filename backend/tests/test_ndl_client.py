@@ -335,6 +335,7 @@ def test_ndl_client_search_by_keyword_returns_candidates(monkeypatch):
             isbn="9784000000002",
             volume_number=3,
             cover_url="https://example.com/covers/search-3.jpg",
+            owned="unknown",
         ),
         ndl_client.CatalogSearchCandidate(
             title="検索テスト別作品",
@@ -343,6 +344,7 @@ def test_ndl_client_search_by_keyword_returns_candidates(monkeypatch):
             isbn="9784000000005",
             volume_number=2,
             cover_url=None,
+            owned="unknown",
         ),
     ]
 
@@ -391,6 +393,7 @@ def test_search_by_keyword_uses_runtime_settings(monkeypatch):
                 isbn="9784000000999",
                 volume_number=None,
                 cover_url=None,
+                owned="unknown",
             )
         ]
 
@@ -452,6 +455,7 @@ def test_ndl_client_lookup_by_identifier_returns_exact_isbn_candidate(monkeypatc
         isbn="9784000000002",
         volume_number=1,
         cover_url="https://example.com/covers/lookup-b-1.jpg",
+        owned="unknown",
     )
 
 
@@ -487,6 +491,7 @@ def test_ndl_client_lookup_by_identifier_returns_first_when_no_exact_match(monke
         isbn="9784000000004",
         volume_number=4,
         cover_url=None,
+        owned="unknown",
     )
 
 
@@ -569,6 +574,7 @@ def test_lookup_by_identifier_uses_runtime_settings(monkeypatch):
             isbn="9784000000999",
             volume_number=None,
             cover_url=None,
+            owned="unknown",
         )
 
     monkeypatch.setattr(ndl_client.NdlClient, "lookup_by_identifier", fake_lookup)

@@ -1,3 +1,5 @@
+import sqlite3
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -21,6 +23,7 @@ def test_search_catalog_returns_candidates_with_status_200(monkeypatch, tmp_path
                 isbn="9780000000001",
                 volume_number=1,
                 cover_url="https://example.com/covers/candidate-a-1.jpg",
+                owned="unknown",
             ),
             main.CatalogSearchCandidate(
                 title="候補作品B",
@@ -29,6 +32,7 @@ def test_search_catalog_returns_candidates_with_status_200(monkeypatch, tmp_path
                 isbn=None,
                 volume_number=None,
                 cover_url=None,
+                owned="unknown",
             ),
         ]
 
@@ -47,6 +51,7 @@ def test_search_catalog_returns_candidates_with_status_200(monkeypatch, tmp_path
             "isbn": "9780000000001",
             "volume_number": 1,
             "cover_url": "https://example.com/covers/candidate-a-1.jpg",
+            "owned": False,
         },
         {
             "title": "候補作品B",
@@ -55,6 +60,100 @@ def test_search_catalog_returns_candidates_with_status_200(monkeypatch, tmp_path
             "isbn": None,
             "volume_number": None,
             "cover_url": None,
+            "owned": "unknown",
+        },
+    ]
+
+
+def test_search_catalog_assigns_owned_status_from_registered_isbn(monkeypatch, tmp_path):
+    """候補ISBNとDB登録済みISBNを突合し、ownedを付与する."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    def fake_search_catalog_by_keyword(q: str, limit: int) -> list[main.CatalogSearchCandidate]:
+        assert q == "候補"
+        assert limit == 3
+        return [
+            main.CatalogSearchCandidate(
+                title="所持済み候補",
+                author=None,
+                publisher=None,
+                isbn="9780000000001",
+                volume_number=1,
+                cover_url=None,
+                owned="unknown",
+            ),
+            main.CatalogSearchCandidate(
+                title="未所持候補",
+                author=None,
+                publisher=None,
+                isbn="9780000000002",
+                volume_number=2,
+                cover_url=None,
+                owned="unknown",
+            ),
+            main.CatalogSearchCandidate(
+                title="ISBN不明候補",
+                author=None,
+                publisher=None,
+                isbn=None,
+                volume_number=None,
+                cover_url=None,
+                owned="unknown",
+            ),
+        ]
+
+    monkeypatch.setattr(main, "_search_catalog_by_keyword", fake_search_catalog_by_keyword)
+
+    with TestClient(main.app) as client:
+        with sqlite3.connect(db_path) as connection:
+            series_cursor = connection.execute(
+                """
+                INSERT INTO series (title, author, publisher)
+                VALUES (?, ?, ?);
+                """,
+                ("既存シリーズ", None, None),
+            )
+            series_id = int(series_cursor.lastrowid)
+            connection.execute(
+                """
+                INSERT INTO volume (isbn, series_id, volume_number, cover_url)
+                VALUES (?, ?, ?, ?);
+                """,
+                ("9780000000001", series_id, 1, None),
+            )
+            connection.commit()
+
+        response = client.get("/api/catalog/search", params={"q": "候補", "limit": 3})
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "title": "所持済み候補",
+            "author": None,
+            "publisher": None,
+            "isbn": "9780000000001",
+            "volume_number": 1,
+            "cover_url": None,
+            "owned": True,
+        },
+        {
+            "title": "未所持候補",
+            "author": None,
+            "publisher": None,
+            "isbn": "9780000000002",
+            "volume_number": 2,
+            "cover_url": None,
+            "owned": False,
+        },
+        {
+            "title": "ISBN不明候補",
+            "author": None,
+            "publisher": None,
+            "isbn": None,
+            "volume_number": None,
+            "cover_url": None,
+            "owned": "unknown",
         },
     ]
 
@@ -75,6 +174,7 @@ def test_lookup_catalog_returns_single_candidate_with_status_200(monkeypatch, tm
             isbn=isbn,
             volume_number=7,
             cover_url="https://example.com/covers/lookup-a-7.jpg",
+            owned="unknown",
         )
 
     monkeypatch.setattr(main, "_lookup_catalog_by_identifier", fake_lookup_catalog_by_identifier)
@@ -93,6 +193,7 @@ def test_lookup_catalog_returns_single_candidate_with_status_200(monkeypatch, tm
         "isbn": "9780000000001",
         "volume_number": 7,
         "cover_url": "https://example.com/covers/lookup-a-7.jpg",
+        "owned": False,
     }
 
 
@@ -112,6 +213,7 @@ def test_search_catalog_passes_candidates_through_common_dto_conversion(monkeypa
                 isbn="9780000000001",
                 volume_number=1,
                 cover_url=None,
+                owned="unknown",
             )
         ]
 
@@ -126,6 +228,7 @@ def test_search_catalog_passes_candidates_through_common_dto_conversion(monkeypa
             isbn=candidate.isbn,
             volume_number=candidate.volume_number,
             cover_url=candidate.cover_url,
+            owned=candidate.owned,
         )
 
     monkeypatch.setattr(main, "_search_catalog_by_keyword", fake_search_catalog_by_keyword)
@@ -146,6 +249,7 @@ def test_search_catalog_passes_candidates_through_common_dto_conversion(monkeypa
             "isbn": "9780000000001",
             "volume_number": 1,
             "cover_url": None,
+            "owned": False,
         }
     ]
 
@@ -165,6 +269,7 @@ def test_lookup_catalog_passes_candidate_through_common_dto_conversion(monkeypat
             isbn=isbn,
             volume_number=2,
             cover_url=None,
+            owned="unknown",
         )
 
     def fake_to_catalog_search_candidate_dto(
@@ -178,6 +283,7 @@ def test_lookup_catalog_passes_candidate_through_common_dto_conversion(monkeypat
             isbn=candidate.isbn,
             volume_number=candidate.volume_number,
             cover_url=candidate.cover_url,
+            owned=candidate.owned,
         )
 
     monkeypatch.setattr(main, "_lookup_catalog_by_identifier", fake_lookup_catalog_by_identifier)
@@ -197,6 +303,7 @@ def test_lookup_catalog_passes_candidate_through_common_dto_conversion(monkeypat
         "isbn": "9780000000001",
         "volume_number": 2,
         "cover_url": None,
+        "owned": False,
     }
 
 
@@ -367,7 +474,7 @@ def test_catalog_search_candidate_schema_documents_field_meanings():
     openapi_schema = main.app.openapi()
     candidate_schema = openapi_schema["components"]["schemas"]["CatalogSearchCandidate"]
 
-    assert set(candidate_schema["required"]) == {"title"}
+    assert set(candidate_schema["required"]) == {"title", "owned"}
 
     properties = candidate_schema["properties"]
     assert properties["title"]["description"] == "候補タイトル（シリーズ名）。必須で返す。"
@@ -378,6 +485,10 @@ def test_catalog_search_candidate_schema_documents_field_meanings():
     assert (
         properties["cover_url"]["description"]
         == "表紙URL。書影情報が無い場合はnull（画像バイナリは返さない）。"
+    )
+    assert (
+        properties["owned"]["description"]
+        == "所持判定。DB照合で true/false、ISBN欠損など判定不能時はunknown。"
     )
 
 
