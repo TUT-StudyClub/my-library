@@ -16,7 +16,31 @@ type LibrarySeries = {
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const DEFAULT_ERROR_MESSAGE = "ライブラリの取得に失敗しました。";
+// 入力停止後300ms待って検索し、タイプ中の過剰リクエストを抑える。
 const SEARCH_DEBOUNCE_MS = 300;
+
+function isNullableString(value: unknown): value is string | null {
+  return typeof value === "string" || value === null;
+}
+
+function isLibrarySeries(value: unknown): value is LibrarySeries {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  return (
+    Number.isInteger(candidate.id) &&
+    typeof candidate.id === "number" &&
+    candidate.id > 0 &&
+    typeof candidate.title === "string" &&
+    candidate.title.trim() !== "" &&
+    isNullableString(candidate.author) &&
+    isNullableString(candidate.publisher) &&
+    isNullableString(candidate.representative_cover_url)
+  );
+}
 
 function extractErrorMessage(errorPayload: unknown, statusCode: number): string {
   if (
@@ -76,12 +100,12 @@ export function LibraryTabPage() {
         }
 
         const payload = (await response.json()) as unknown;
-        if (!Array.isArray(payload)) {
+        if (!Array.isArray(payload) || !payload.every(isLibrarySeries)) {
           throw new Error(DEFAULT_ERROR_MESSAGE);
         }
 
         if (!abortController.signal.aborted) {
-          setSeriesList(payload as LibrarySeries[]);
+          setSeriesList(payload);
         }
       } catch (error) {
         if (abortController.signal.aborted) {
