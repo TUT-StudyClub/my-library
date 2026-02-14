@@ -42,6 +42,7 @@
 * Backend: FastAPI（Python）  
 * DB: SQLite（Dockerは使わない）  
 * 外部書誌: 国立国会図書館サーチ（NDL Search）  
+* 書影データ: MVPでは画像バイナリを保持せず、URLのみ扱う  
 * バーコードスキャン: ブラウザカメラ（例：html5-qrcode等）
 
 ---
@@ -240,6 +241,7 @@
 
 * `Volume.isbn` ユニーク（重複登録防止）  
 * `Volume.isbn` は正規化済みの半角数字13桁のみ保存する  
+* `Volume.cover_url` はURL文字列のみ保存し、画像バイナリ（BLOB/Base64/ファイル）は保存しない  
 * `series_id` 外部キー（SQLiteのFK有効化が前提）
 
 ## **7.3 全巻削除時の扱い（採用）**
@@ -611,6 +613,193 @@
 
 * `GET /api/catalog/search?q=...&limit=...`（検索タブ用：候補＋所持判定）  
 * `GET /api/series/{series_id}/candidates`（作品詳細用：未登録候補。フィルタ＋重複排除済み）
+
+#### **8.2.1 GET /api/catalog/search（検索タブ候補取得）**
+
+検索タブでキーワード検索し、NDL Search の候補一覧を取得するエンドポイント。  
+本Story時点では **候補取得のみ** を返し、`owned`（所持判定）は含めない。
+
+**HTTPメソッド/パス**
+
+* `GET /api/catalog/search`
+
+**クエリパラメータ**
+
+| パラメータ | 型 | 必須 | 説明 |
+|---|---|---|---|
+| `q` | string | 必須 | 検索キーワード（作品名/著者名など） |
+| `limit` | number | 任意 | 取得件数。`1`〜`100`。未指定時は `10` |
+
+`q` と `limit` の扱いは以下で固定する。
+
+* `q` は必須（未指定は `422`）  
+* `q` が空文字または空白のみの場合は `400`（`INVALID_CATALOG_SEARCH_QUERY`）  
+* `limit` が `1` 未満または `100` 超の場合は `422`
+
+**リクエスト例**
+
+`GET /api/catalog/search?q=葬送のフリーレン&limit=3`
+
+**レスポンス（200 OK）**
+
+配列で返す。1要素が1候補。  
+並び順は NDL Search の応答順をそのまま使用する。
+
+| フィールド | 型 | `null` | 説明 |
+|---|---|---|---|
+| `title` | string | 不可 | 候補タイトル（シリーズ名） |
+| `author` | string | 可 | 著者名 |
+| `publisher` | string | 可 | 出版社名 |
+| `isbn` | string | 可 | ISBN-13（取得できない場合は `null`） |
+| `volume_number` | number | 可 | 巻数（取得できない場合は `null`） |
+| `cover_url` | string | 可 | 表紙URL（取得できない場合は `null`） |
+
+`cover_url` は参照先URLを返すための値であり、画像バイナリはAPIレスポンスに含めない。
+
+**レスポンス例（200 OK）**
+
+```json
+[
+  {
+    "title": "葬送のフリーレン",
+    "author": "山田鐘人",
+    "publisher": "小学館",
+    "isbn": "9784098515762",
+    "volume_number": 1,
+    "cover_url": "https://example.com/covers/frieren-1.jpg"
+  },
+  {
+    "title": "葬送のフリーレン",
+    "author": "山田鐘人",
+    "publisher": "小学館",
+    "isbn": null,
+    "volume_number": 2,
+    "cover_url": null
+  }
+]
+```
+
+**エラー例（400 Bad Request）**
+
+`q` が空文字または空白のみの場合。
+
+```json
+{
+  "error": {
+    "code": "INVALID_CATALOG_SEARCH_QUERY",
+    "message": "Catalog search query is invalid",
+    "details": {
+      "reason": "q must not be empty"
+    }
+  }
+}
+```
+
+**エラー例（422 Unprocessable Entity）**
+
+`q` 未指定、または `limit` 範囲外の場合。
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "リクエストパラメータが不正です。",
+    "details": {
+      "fieldErrors": [
+        {
+          "field": "query.q",
+          "reason": "Field required"
+        }
+      ]
+    }
+  }
+}
+```
+
+**エラー例（504 Gateway Timeout）**
+
+上流（NDL Search）がタイムアウトした場合。
+
+```json
+{
+  "error": {
+    "code": "NDL_API_TIMEOUT",
+    "message": "NDL API request timed out",
+    "details": {
+      "upstream": "NDL Search",
+      "externalFailure": true,
+      "failureType": "timeout",
+      "retryable": true,
+      "timeoutSeconds": 10
+    }
+  }
+}
+```
+
+#### **8.2.2 GET /api/catalog/lookup（識別子検索）**
+
+識別子（ISBN）で NDL Search を検索し、最良候補1件を取得するエンドポイント。
+
+**HTTPメソッド/パス**
+
+* `GET /api/catalog/lookup`
+
+**クエリパラメータ**
+
+| パラメータ | 型 | 必須 | 説明 |
+|---|---|---|---|
+| `isbn` | string | 必須 | 検索対象のISBN。入力時は前後空白/全角数字/ハイフンを許容し、サーバー側で正規化する |
+
+`isbn` は `docs/DEVELOPMENT_RULES.md` の「識別子（ISBN）正規化ルール」に従って正規化し、正規化後が半角数字13桁でない場合は `400`（`INVALID_ISBN`）とする。
+
+**レスポンス（200 OK）**
+
+検索結果の最良候補を1件返す。レスポンスDTOは `GET /api/catalog/search` と同一の `CatalogSearchCandidate` を使う。
+
+**レスポンス例（200 OK）**
+
+```json
+{
+  "title": "葬送のフリーレン",
+  "author": "山田鐘人",
+  "publisher": "小学館",
+  "isbn": "9784098515762",
+  "volume_number": 1,
+  "cover_url": "https://example.com/covers/frieren-1.jpg"
+}
+```
+
+**エラー例（404 Not Found）**
+
+```json
+{
+  "error": {
+    "code": "CATALOG_ITEM_NOT_FOUND",
+    "message": "Catalog item not found",
+    "details": {
+      "isbn": "9784098515762",
+      "upstream": "NDL Search",
+      "externalFailure": false
+    }
+  }
+}
+```
+
+#### **8.2.3 CatalogSearchCandidate DTO（共通）**
+
+`/api/catalog/search` と `/api/catalog/lookup` は、同じ `CatalogSearchCandidate` DTO で返す。  
+欠損可能な項目もキーは省略せず、必ず `null` で返す。
+
+| フィールド | 型 | 必須 | 欠損時の扱い | UI/判定ロジックの扱い |
+|---|---|---|---|---|
+| `title` | string | 必須 | 欠損は許容しない | 候補表示の主キーとして扱う |
+| `author` | string | 任意 | 取得できない場合は `null` | `null` は「著者不明」として表示可 |
+| `publisher` | string | 任意 | 取得できない場合は `null` | `null` は「出版社不明」として表示可 |
+| `isbn` | string | 任意 | 抽出できない場合は `null` | `null` は所持判定不可として扱う（ISBN前提の登録処理は無効化） |
+| `volume_number` | number | 任意 | 抽出できない場合は `null` | `null` は不明巻として扱う（例: `?巻`） |
+| `cover_url` | string | 任意 | 書影情報が無い場合は `null` | `null` はプレースホルダ画像を表示 |
+
+`cover_url` は参照先URLを返すための値であり、画像バイナリはAPIレスポンスに含めない。
 
 ### **エラー形式（統一）**
 

@@ -4,15 +4,13 @@ import sqlite3
 import unicodedata
 from collections.abc import Mapping, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Annotated, Any, Optional
-from xml.etree import ElementTree as ET
+from typing import Annotated, Any, NoReturn, Optional
 
 import httpx
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,6 +21,16 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from src.config import load_settings
 from src.db import check_database_connection, get_db_connection, initialize_database
 from src.library_queries import fetch_library_series, fetch_series_detail
+from src.ndl_client import (
+    CatalogSearchCandidate,
+    CatalogVolumeMetadata,
+    NdlClientError,
+    fetch_catalog_volume_metadata,
+    search_by_keyword,
+)
+from src.ndl_client import (
+    lookup_by_identifier as ndl_lookup_by_identifier,
+)
 
 load_dotenv()
 settings = load_settings()
@@ -172,35 +180,6 @@ class CreateVolumeResponse(BaseModel):
     volume: VolumeResponse
 
 
-@dataclass(frozen=True)
-class CatalogVolumeMetadata:
-    """NDL Search から取得した巻メタデータ."""
-
-    title: str
-    author: Optional[str]
-    publisher: Optional[str]
-    volume_number: Optional[int]
-    cover_url: Optional[str]
-
-
-NDL_XML_NAMESPACES = {
-    "dc": "http://purl.org/dc/elements/1.1/",
-    "dcndl": "http://ndl.go.jp/dcndl/terms/",
-}
-
-
-def _normalize_optional_text(value: Optional[str]) -> Optional[str]:
-    """空白のみを None に揃え、前後空白を除去する."""
-    if value is None:
-        return None
-
-    normalized_value = value.strip()
-    if normalized_value == "":
-        return None
-
-    return normalized_value
-
-
 def _normalize_isbn(raw_isbn: str) -> str:
     """ISBN を保存用形式（半角数字13桁）へ正規化する."""
     normalized_isbn = unicodedata.normalize("NFKC", raw_isbn).strip()
@@ -219,178 +198,116 @@ def _normalize_isbn(raw_isbn: str) -> str:
     return normalized_isbn
 
 
-def _extract_first_non_empty_text(
-    parent: ET.Element, path: str, namespaces: Optional[dict[str, str]] = None
-) -> Optional[str]:
-    """XMLから最初の非空文字列を取得する."""
-    for node in parent.findall(path, namespaces or {}):
-        if node.text is None:
-            continue
-
-        normalized_text = node.text.strip()
-        if normalized_text != "":
-            return normalized_text
-
-    return None
-
-
-def _extract_cover_url(item: ET.Element) -> Optional[str]:
-    """RSS item の enclosure から表紙URLを抽出する."""
-    enclosure = item.find("enclosure")
-    if enclosure is None:
-        return None
-
-    return _normalize_optional_text(enclosure.attrib.get("url"))
-
-
-def _extract_volume_number(text_value: Optional[str]) -> Optional[int]:
-    """文字列から巻数として使える先頭の整数を抽出する."""
-    if text_value is None:
-        return None
-
-    normalized_text = unicodedata.normalize("NFKC", text_value)
-    matched = re.search(r"([0-9]+)", normalized_text)
-    if matched is None:
-        return None
-
-    return int(matched.group(1))
-
-
-def _split_title_and_volume_number(title: str) -> tuple[str, Optional[int]]:
-    """タイトル末尾の巻数表現を分離する."""
-    normalized_title = _normalize_optional_text(title)
-    if normalized_title is None:
+def _raise_ndl_http_exception(error: Exception) -> NoReturn:
+    """NDL連携失敗をHTTPExceptionへ正規化して送出する."""
+    if isinstance(error, NdlClientError):
         raise HTTPException(
-            status_code=502,
-            detail={
-                "code": "NDL_API_BAD_GATEWAY",
-                "message": "NDL API returned invalid title",
-                "details": {"upstream": "NDL Search"},
-            },
-        )
-
-    patterns = [
-        re.compile(r"^(?P<series>.+?)[\s　]*第(?P<number>[0-9]+)巻$"),
-        re.compile(r"^(?P<series>.+?)[\s　]*(?P<number>[0-9]+)巻$"),
-        re.compile(r"^(?P<series>.+?)[\s　]+vol\.?[\s　]*(?P<number>[0-9]+)$", re.IGNORECASE),
-        re.compile(r"^(?P<series>.+?)[\s　]+(?P<number>[0-9]+)$"),
-    ]
-
-    for pattern in patterns:
-        matched = pattern.match(normalized_title)
-        if matched is None:
-            continue
-
-        series_title = _normalize_optional_text(matched.group("series"))
-        if series_title is None:
-            continue
-
-        return series_title, int(matched.group("number"))
-
-    return normalized_title, None
-
-
-def _parse_catalog_volume_metadata(xml_text: str, isbn: str) -> CatalogVolumeMetadata:
-    """NDL Search の OpenSearch XML から巻メタデータを抽出する."""
-    try:
-        root = ET.fromstring(xml_text)
-    except ET.ParseError as error:
-        raise HTTPException(
-            status_code=502,
-            detail={
-                "code": "NDL_API_BAD_GATEWAY",
-                "message": "NDL API returned invalid XML",
-                "details": {"upstream": "NDL Search"},
-            },
+            status_code=error.status_code,
+            detail=error.to_http_exception_detail(),
         ) from error
 
-    item = root.find("./channel/item")
-    if item is None:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "code": "CATALOG_ITEM_NOT_FOUND",
-                "message": "Catalog item not found",
-                "details": {"isbn": isbn},
-            },
-        )
-
-    title_text = _extract_first_non_empty_text(item, "dc:title", NDL_XML_NAMESPACES)
-    if title_text is None:
-        title_text = _extract_first_non_empty_text(item, "title")
-
-    if title_text is None:
-        raise HTTPException(
-            status_code=502,
-            detail={
-                "code": "NDL_API_BAD_GATEWAY",
-                "message": "NDL API returned invalid title",
-                "details": {"upstream": "NDL Search"},
-            },
-        )
-
-    series_title, volume_number_from_title = _split_title_and_volume_number(title_text)
-    volume_number = _extract_volume_number(
-        _extract_first_non_empty_text(item, "dcndl:volume", NDL_XML_NAMESPACES)
-    )
-    if volume_number is None:
-        volume_number = volume_number_from_title
-
-    author = _extract_first_non_empty_text(item, "dc:creator", NDL_XML_NAMESPACES)
-    if author is None:
-        author = _extract_first_non_empty_text(item, "author")
-
-    publisher = _extract_first_non_empty_text(item, "dc:publisher", NDL_XML_NAMESPACES)
-
-    return CatalogVolumeMetadata(
-        title=series_title,
-        author=_normalize_optional_text(author),
-        publisher=_normalize_optional_text(publisher),
-        volume_number=volume_number,
-        cover_url=_extract_cover_url(item),
-    )
-
-
-def _fetch_catalog_volume_metadata(isbn: str) -> CatalogVolumeMetadata:
-    """ISBNでNDL Searchを検索し、登録に必要な巻メタデータを返す."""
-    runtime_settings = load_settings()
-
-    try:
-        response = httpx.get(
-            runtime_settings.ndl_api_base_url,
-            params={"isbn": isbn, "cnt": 1},
-            timeout=10.0,
-        )
-    except httpx.TimeoutException as error:
+    if isinstance(error, (httpx.TimeoutException, TimeoutError)):
+        logger.exception("NDL Search 呼び出しで予期しないタイムアウト例外が発生しました。")
         raise HTTPException(
             status_code=504,
             detail={
                 "code": "NDL_API_TIMEOUT",
                 "message": "NDL API request timed out",
-                "details": {"upstream": "NDL Search", "timeoutSeconds": 10},
-            },
-        ) from error
-    except httpx.HTTPError as error:
-        raise HTTPException(
-            status_code=502,
-            detail={
-                "code": "NDL_API_BAD_GATEWAY",
-                "message": "Failed to connect NDL API",
-                "details": {"upstream": "NDL Search"},
+                "details": {
+                    "upstream": "NDL Search",
+                    "externalFailure": True,
+                    "failureType": "timeout",
+                    "retryable": True,
+                },
             },
         ) from error
 
-    if response.status_code != 200:
+    logger.exception("NDL Search 呼び出しで予期しない例外が発生しました。")
+    raise HTTPException(
+        status_code=502,
+        detail={
+            "code": "NDL_API_BAD_GATEWAY",
+            "message": "Failed to connect NDL API",
+            "details": {
+                "upstream": "NDL Search",
+                "externalFailure": True,
+                "failureType": "communication",
+                "retryable": False,
+            },
+        },
+    ) from error
+
+
+def _fetch_catalog_volume_metadata(isbn: str) -> CatalogVolumeMetadata:
+    """ISBNでNDL Searchを検索し、登録に必要な巻メタデータを返す."""
+    try:
+        return fetch_catalog_volume_metadata(isbn)
+    except Exception as error:
+        _raise_ndl_http_exception(error)
+
+
+def _search_catalog_by_keyword(q: str, limit: int) -> list[CatalogSearchCandidate]:
+    """キーワードでNDL Searchを検索し、候補一覧を返す."""
+    try:
+        return search_by_keyword(q=q, limit=limit, page=1)
+    except ValueError as error:
         raise HTTPException(
-            status_code=502,
+            status_code=400,
             detail={
-                "code": "NDL_API_BAD_GATEWAY",
-                "message": "NDL API returned non-200 status",
-                "details": {"upstream": "NDL Search", "statusCode": response.status_code},
+                "code": "INVALID_CATALOG_SEARCH_QUERY",
+                "message": "Catalog search query is invalid",
+                "details": {"reason": str(error)},
+            },
+        ) from error
+    except Exception as error:
+        _raise_ndl_http_exception(error)
+
+
+def _lookup_catalog_by_identifier(isbn: str) -> CatalogSearchCandidate:
+    """識別子でNDL Searchを検索し、最良候補1件を返す."""
+    try:
+        candidate = ndl_lookup_by_identifier(isbn=isbn)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "INVALID_ISBN",
+                "message": "isbn must be 13 digits",
+                "details": {"isbn": isbn, "reason": str(error)},
+            },
+        ) from error
+    except Exception as error:
+        _raise_ndl_http_exception(error)
+
+    if candidate is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "CATALOG_ITEM_NOT_FOUND",
+                "message": "Catalog item not found",
+                "details": {
+                    "isbn": isbn,
+                    "upstream": "NDL Search",
+                    "externalFailure": False,
+                },
             },
         )
 
-    return _parse_catalog_volume_metadata(response.text, isbn)
+    return candidate
+
+
+def _to_catalog_search_candidate_dto(
+    candidate: CatalogSearchCandidate,
+) -> CatalogSearchCandidate:
+    """カタログ候補をAPIレスポンスDTOへ変換する."""
+    return CatalogSearchCandidate(
+        title=candidate.title,
+        author=candidate.author,
+        publisher=candidate.publisher,
+        isbn=candidate.isbn,
+        volume_number=candidate.volume_number,
+        cover_url=candidate.cover_url,
+    )
 
 
 def _find_or_create_series(
@@ -842,6 +759,28 @@ async def list_library(
         )
         for series in series_list
     ]
+
+
+@app.get("/api/catalog/search", response_model=list[CatalogSearchCandidate])
+async def search_catalog(
+    q: str,
+    limit: Annotated[int, Query(ge=1, le=100)] = 10,
+):
+    """外部カタログをキーワード検索し、候補一覧を返す."""
+    candidates: list[CatalogSearchCandidate] = await run_in_threadpool(
+        _search_catalog_by_keyword, q, limit
+    )
+    return [_to_catalog_search_candidate_dto(candidate) for candidate in candidates]
+
+
+@app.get("/api/catalog/lookup", response_model=CatalogSearchCandidate)
+async def lookup_catalog(isbn: str):
+    """外部カタログを識別子検索し、最良候補1件を返す."""
+    normalized_isbn = _normalize_isbn(isbn)
+    candidate: CatalogSearchCandidate = await run_in_threadpool(
+        _lookup_catalog_by_identifier, normalized_isbn
+    )
+    return _to_catalog_search_candidate_dto(candidate)
 
 
 @app.get("/api/series/{series_id}", response_model=SeriesDetailResponse)
