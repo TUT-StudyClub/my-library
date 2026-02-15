@@ -3,8 +3,13 @@
 import Image, { type ImageLoaderProps } from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { buildUserFacingApiErrorMessage, extractApiErrorCode } from "@/lib/apiError";
 import { publishLibraryRefreshSignal } from "@/lib/libraryRefreshSignal";
-import { publishSeriesVolumeRegistered, type SeriesVolume } from "@/lib/seriesVolumeSignal";
+import {
+  publishSeriesVolumeRegistered,
+  subscribeSeriesVolumeDeleted,
+  type SeriesVolume,
+} from "@/lib/seriesVolumeSignal";
 import styles from "./page.module.css";
 
 type SeriesCandidate = {
@@ -101,69 +106,12 @@ function CandidateCover({ title, coverUrl, volumeNumber }: CandidateCoverProps) 
   );
 }
 
-function extractErrorMessage(errorPayload: unknown, statusCode: number): string {
-  if (
-    typeof errorPayload === "object" &&
-    errorPayload !== null &&
-    "error" in errorPayload &&
-    typeof errorPayload.error === "object" &&
-    errorPayload.error !== null &&
-    "message" in errorPayload.error &&
-    typeof errorPayload.error.message === "string"
-  ) {
-    const message = errorPayload.error.message.trim();
-    if (message !== "") {
-      return message;
-    }
-  }
-
-  return `${DEFAULT_FETCH_ERROR_MESSAGE} (status: ${statusCode})`;
-}
-
 function normalizeErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim() !== "") {
     return error.message;
   }
 
   return DEFAULT_FETCH_ERROR_MESSAGE;
-}
-
-function extractRegisterErrorMessage(errorPayload: unknown, statusCode: number): string {
-  if (
-    typeof errorPayload === "object" &&
-    errorPayload !== null &&
-    "error" in errorPayload &&
-    typeof errorPayload.error === "object" &&
-    errorPayload.error !== null &&
-    "message" in errorPayload.error &&
-    typeof errorPayload.error.message === "string"
-  ) {
-    const message = errorPayload.error.message.trim();
-    if (message !== "") {
-      return message;
-    }
-  }
-
-  return `${DEFAULT_REGISTER_ERROR_MESSAGE} (status: ${statusCode})`;
-}
-
-function extractRegisterErrorCode(errorPayload: unknown): string | null {
-  if (
-    typeof errorPayload === "object" &&
-    errorPayload !== null &&
-    "error" in errorPayload &&
-    typeof errorPayload.error === "object" &&
-    errorPayload.error !== null &&
-    "code" in errorPayload.error &&
-    typeof errorPayload.error.code === "string"
-  ) {
-    const errorCode = errorPayload.error.code.trim();
-    if (errorCode !== "") {
-      return errorCode;
-    }
-  }
-
-  return null;
 }
 
 function extractRegisteredIsbn(payload: unknown): string | null {
@@ -357,7 +305,21 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
         });
         if (!response.ok) {
           const errorPayload = (await response.json().catch(() => null)) as unknown;
-          throw new Error(extractErrorMessage(errorPayload, response.status));
+          const errorCode = extractApiErrorCode(errorPayload);
+          if (response.status === 404 && errorCode === "SERIES_NOT_FOUND") {
+            publishLibraryRefreshSignal();
+            router.replace("/library");
+            router.refresh();
+            return;
+          }
+
+          throw new Error(
+            buildUserFacingApiErrorMessage({
+              errorPayload,
+              statusCode: response.status,
+              fallbackMessage: DEFAULT_FETCH_ERROR_MESSAGE,
+            })
+          );
         }
 
         const payload = (await response.json()) as unknown;
@@ -400,7 +362,17 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
       isDisposed = true;
       abortController.abort();
     };
-  }, [reloadKey, seriesId]);
+  }, [reloadKey, router, seriesId]);
+
+  useEffect(() => {
+    return subscribeSeriesVolumeDeleted((detail) => {
+      if (detail.seriesId !== seriesId) {
+        return;
+      }
+
+      setReloadKey((currentValue) => currentValue + 1);
+    });
+  }, [seriesId]);
 
   useEffect(() => {
     if (selectedCandidate === null) {
@@ -477,7 +449,7 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
 
       if (!response.ok) {
         const errorPayload = (await response.json().catch(() => null)) as unknown;
-        const registerErrorCode = extractRegisterErrorCode(errorPayload);
+        const registerErrorCode = extractApiErrorCode(errorPayload);
 
         if (response.status === 409 && registerErrorCode === "VOLUME_ALREADY_EXISTS") {
           showRegisterResultToast("info", `ISBN: ${targetCandidate.isbn} は既に登録済みです。`);
@@ -492,7 +464,11 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
 
         showRegisterResultToast(
           "error",
-          extractRegisterErrorMessage(errorPayload, response.status)
+          buildUserFacingApiErrorMessage({
+            errorPayload,
+            statusCode: response.status,
+            fallbackMessage: DEFAULT_REGISTER_ERROR_MESSAGE,
+          })
         );
         return;
       }
@@ -598,6 +574,9 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
     );
   }
 
+  const selectedCandidateCoverUrl =
+    selectedCandidate === null ? null : normalizeCoverUrl(selectedCandidate.cover_url);
+
   return (
     <section className={styles.volumeSection}>
       <h2 className={styles.sectionTitle}>未登録候補</h2>
@@ -696,16 +675,16 @@ export function SeriesCandidatesSection({ seriesId }: SeriesCandidatesSectionPro
               <div className={styles.candidateModalMetaRow}>
                 <dt className={styles.candidateModalMetaLabel}>表紙URL</dt>
                 <dd className={styles.candidateModalMetaValue}>
-                  {selectedCandidate.cover_url === null ? (
+                  {selectedCandidateCoverUrl === null ? (
                     "不明"
                   ) : (
                     <a
                       className={styles.candidateModalCoverLink}
-                      href={selectedCandidate.cover_url}
+                      href={selectedCandidateCoverUrl}
                       rel="noopener noreferrer"
                       target="_blank"
                     >
-                      {selectedCandidate.cover_url}
+                      {selectedCandidateCoverUrl}
                     </a>
                   )}
                 </dd>

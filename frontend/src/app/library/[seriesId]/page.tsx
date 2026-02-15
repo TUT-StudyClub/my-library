@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { buildUserFacingApiErrorMessage, extractApiErrorCode } from "@/lib/apiError";
+import { DeleteSeriesVolumesButton } from "./DeleteSeriesVolumesButton";
 import { RegisteredVolumesSection } from "./RegisteredVolumesSection";
 import { SeriesCandidatesSection } from "./SeriesCandidatesSection";
 import styles from "./page.module.css";
@@ -27,44 +29,6 @@ type SeriesDetailPageProps = {
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const DEFAULT_FETCH_ERROR_MESSAGE = "シリーズ詳細の取得に失敗しました。";
-
-function extractErrorCode(errorPayload: unknown): string | null {
-  if (
-    typeof errorPayload === "object" &&
-    errorPayload !== null &&
-    "error" in errorPayload &&
-    typeof errorPayload.error === "object" &&
-    errorPayload.error !== null &&
-    "code" in errorPayload.error &&
-    typeof errorPayload.error.code === "string"
-  ) {
-    const code = errorPayload.error.code.trim();
-    if (code !== "") {
-      return code;
-    }
-  }
-
-  return null;
-}
-
-function extractErrorMessage(errorPayload: unknown, statusCode: number): string {
-  if (
-    typeof errorPayload === "object" &&
-    errorPayload !== null &&
-    "error" in errorPayload &&
-    typeof errorPayload.error === "object" &&
-    errorPayload.error !== null &&
-    "message" in errorPayload.error &&
-    typeof errorPayload.error.message === "string"
-  ) {
-    const message = errorPayload.error.message.trim();
-    if (message !== "") {
-      return message;
-    }
-  }
-
-  return `${DEFAULT_FETCH_ERROR_MESSAGE} (status: ${statusCode})`;
-}
 
 function isSeriesVolume(value: unknown): value is SeriesVolume {
   return (
@@ -105,12 +69,18 @@ async function fetchSeriesDetail(seriesId: string): Promise<SeriesDetail> {
 
   if (!response.ok) {
     const errorPayload = (await response.json().catch(() => null)) as unknown;
-    const errorCode = extractErrorCode(errorPayload);
+    const errorCode = extractApiErrorCode(errorPayload);
     if (response.status === 404 || errorCode === "SERIES_NOT_FOUND") {
       notFound();
     }
 
-    throw new Error(extractErrorMessage(errorPayload, response.status));
+    throw new Error(
+      buildUserFacingApiErrorMessage({
+        errorPayload,
+        statusCode: response.status,
+        fallbackMessage: DEFAULT_FETCH_ERROR_MESSAGE,
+      })
+    );
   }
 
   const payload = (await response.json()) as unknown;
@@ -139,18 +109,28 @@ export default async function SeriesDetailPage({ params }: SeriesDetailPageProps
         </p>
 
         <header className={styles.header}>
-          <h1 className={styles.title}>{seriesDetail.title}</h1>
-          <p className={styles.seriesId}>seriesId: {normalizedSeriesId}</p>
-          <dl className={styles.seriesMetaList}>
-            <div className={styles.seriesMetaRow}>
-              <dt className={styles.seriesMetaLabel}>著者</dt>
-              <dd className={styles.seriesMetaValue}>{seriesDetail.author ?? "不明"}</dd>
+          <div className={styles.headerMain}>
+            <div className={styles.headerInfo}>
+              <h1 className={styles.title}>{seriesDetail.title}</h1>
+              <p className={styles.seriesId}>seriesId: {normalizedSeriesId}</p>
+              <dl className={styles.seriesMetaList}>
+                <div className={styles.seriesMetaRow}>
+                  <dt className={styles.seriesMetaLabel}>著者</dt>
+                  <dd className={styles.seriesMetaValue}>{seriesDetail.author ?? "不明"}</dd>
+                </div>
+                <div className={styles.seriesMetaRow}>
+                  <dt className={styles.seriesMetaLabel}>出版社</dt>
+                  <dd className={styles.seriesMetaValue}>{seriesDetail.publisher ?? "不明"}</dd>
+                </div>
+              </dl>
             </div>
-            <div className={styles.seriesMetaRow}>
-              <dt className={styles.seriesMetaLabel}>出版社</dt>
-              <dd className={styles.seriesMetaValue}>{seriesDetail.publisher ?? "不明"}</dd>
+            <div className={styles.headerActions}>
+              <DeleteSeriesVolumesButton
+                seriesId={normalizedSeriesId}
+                seriesTitle={seriesDetail.title}
+              />
             </div>
-          </dl>
+          </div>
         </header>
 
         <div className={styles.volumeRows}>
@@ -158,6 +138,7 @@ export default async function SeriesDetailPage({ params }: SeriesDetailPageProps
           <RegisteredVolumesSection
             initialVolumes={seriesDetail.volumes}
             seriesId={normalizedSeriesId}
+            seriesTitle={seriesDetail.title}
           />
         </div>
       </div>
