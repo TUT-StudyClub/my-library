@@ -293,7 +293,6 @@ def _raise_ndl_http_exception(error: Exception) -> NoReturn:
                 "retryable": True,
             },
         )
-        logger.exception("NDL Search 呼び出しで予期しないタイムアウト例外が発生しました。")
         raise HTTPException(
             status_code=504,
             detail={
@@ -319,7 +318,6 @@ def _raise_ndl_http_exception(error: Exception) -> NoReturn:
             "retryable": False,
         },
     )
-    logger.exception("NDL Search 呼び出しで予期しない例外が発生しました。")
     raise HTTPException(
         status_code=502,
         detail={
