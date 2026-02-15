@@ -249,6 +249,7 @@
 ## **7.2 制約**
 
 * `Volume.isbn` ユニーク（重複登録防止）  
+* `Series` は `title + author + publisher`（`author`/`publisher` は `null` を空文字同等扱い）でユニーク（重複Series防止）  
 * `Volume.isbn` は正規化済みの半角数字13桁のみ保存する  
 * `Volume.cover_url` はURL文字列のみ保存し、画像バイナリ（BLOB/Base64/ファイル）は保存しない  
 * `series_id` 外部キー（SQLiteのFK有効化が前提）
@@ -944,6 +945,53 @@ type BookDTO = {
   }
 }
 ```
+
+### **8.3 最小テスト観点（health / library / series detail / register / delete）**
+
+この節は、MVPで最低限維持するべきAPIテスト観点を定義する。  
+レスポンス本文は「主要フィールドの期待値」を記載し、追加フィールドがあっても主要フィールドが一致していれば合格とする。
+
+#### **8.3.1 health（`GET /health`）**
+
+| ケースID | 前提 | リクエスト | 期待ステータス | 期待値（主要フィールド） |
+|---|---|---|---|---|
+| `HEALTH-01` | DB疎通が成功する | `GET /health` | `200` | `{"status":"ok","message":"API is running"}` |
+| `HEALTH-02` | DB疎通チェックで例外が発生する | `GET /health` | `503` | `error.code = "SERVICE_UNAVAILABLE"`、`error.message = "Database connection failed"`、`error.details = {}` |
+
+#### **8.3.2 library（`GET /api/library`）**
+
+| ケースID | 前提 | リクエスト | 期待ステータス | 期待値（主要フィールド） |
+|---|---|---|---|---|
+| `LIBRARY-01` | Seriesが2件以上登録済み | `GET /api/library` | `200` | 登録済みSeriesが配列で返る。`title` は `created_at DESC, id DESC` の順。 |
+| `LIBRARY-02` | `title` または `author` に一致するSeriesが存在する | `GET /api/library?q=<keyword>` | `200` | `title OR author` の部分一致に合致するSeriesのみ返る。 |
+| `LIBRARY-03` | Seriesが複数件登録済み | `GET /api/library?q=` または `GET /api/library?q=   ` | `200` | 空文字・空白のみは検索なし扱いとなり、全件返る。 |
+| `LIBRARY-04` | 同一Series内に複数Volumeがある | `GET /api/library` | `200` | `representative_cover_url` は「1巻の表紙 > 最古登録巻の表紙 > `null`」の優先順位で返る。 |
+
+#### **8.3.3 series detail（`GET /api/series/{series_id}`）**
+
+| ケースID | 前提 | リクエスト | 期待ステータス | 期待値（主要フィールド） |
+|---|---|---|---|---|
+| `SERIES-DETAIL-01` | 対象Seriesが存在し、Volumeが0件 | `GET /api/series/{series_id}` | `200` | `id/title/author/publisher` が返り、`volumes = []` |
+| `SERIES-DETAIL-02` | 対象SeriesにVolumeが複数件ある | `GET /api/series/{series_id}` | `200` | `volumes` は `volume_number ASC（nullは末尾）` で返る。各要素は `isbn`（13桁）, `registered_at`（ISO 8601）を持つ。 |
+| `SERIES-DETAIL-03` | 対象Seriesが存在しない | `GET /api/series/{series_id}` | `404` | `error.code = "SERIES_NOT_FOUND"`、`error.details.seriesId = {series_id}` |
+
+#### **8.3.4 register（`POST /api/volumes`）**
+
+| ケースID | 前提 | リクエスト | 期待ステータス | 期待値（主要フィールド） |
+|---|---|---|---|---|
+| `REGISTER-01` | NDLから書誌取得できる | `POST /api/volumes` (`{"isbn":" ９７８-... "}`) | `201` | `volume.isbn` は正規化済み13桁で返る。`series` と `volume.registered_at` が返る。 |
+| `REGISTER-02` | 同一ISBNが既に登録済み | `POST /api/volumes` (`{"isbn":"978..."}`) | `409` | `error.code = "VOLUME_ALREADY_EXISTS"`、`error.message = "Volume already exists"` |
+| `REGISTER-03` | 正規化後に13桁にならないISBN | `POST /api/volumes` (`{"isbn":"978-abc"}`) | `400` | `error.code = "INVALID_ISBN"`、`error.details.isbn` に入力値が入る。 |
+
+#### **8.3.5 delete（`DELETE /api/volumes/{isbn}` / `DELETE /api/series/{series_id}/volumes`）**
+
+| ケースID | 前提 | リクエスト | 期待ステータス | 期待値（主要フィールド） |
+|---|---|---|---|---|
+| `DELETE-01` | 対象ISBNが登録済み | `DELETE /api/volumes/{isbn}` | `200` | `deleted.isbn`（正規化済み）/`deleted.seriesId`/`deleted.remainingVolumeCount` が返る。 |
+| `DELETE-02` | 対象ISBNが未登録 | `DELETE /api/volumes/{isbn}` | `404` | `error.code = "VOLUME_NOT_FOUND"`、`error.details.isbn = {isbn}` |
+| `DELETE-03` | 正規化後に13桁にならないISBN | `DELETE /api/volumes/{isbn}` | `400` | `error.code = "INVALID_ISBN"`、`error.details.isbn` に入力値が入る。 |
+| `DELETE-04` | 対象Seriesが存在し、Volumeが1件以上ある | `DELETE /api/series/{series_id}/volumes` | `200` | `deleted.seriesId` と `deleted.deletedVolumeCount` が返る。 |
+| `DELETE-05` | 対象Seriesが存在しない | `DELETE /api/series/{series_id}/volumes` | `404` | `error.code = "SERIES_NOT_FOUND"`、`error.details.seriesId = {series_id}` |
 
 ---
 

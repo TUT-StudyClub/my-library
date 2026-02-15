@@ -134,6 +134,39 @@ def _build_validation_details(errors: Sequence[Any]) -> dict[str, Any]:
     return {"fieldErrors": field_errors}
 
 
+def _log_external_api_failure(
+    status_code: int,
+    code: str,
+    message: str,
+    details: Optional[dict[str, Any]],
+) -> None:
+    """外部API失敗を重要イベントとして記録する."""
+    normalized_details = details or {}
+    logger.error(
+        (
+            "重要イベント: 外部API失敗 "
+            "statusCode=%s code=%s message=%s upstream=%s failureType=%s retryable=%s details=%s"
+        ),
+        status_code,
+        code,
+        message,
+        normalized_details.get("upstream"),
+        normalized_details.get("failureType"),
+        normalized_details.get("retryable"),
+        normalized_details,
+    )
+
+
+def _log_db_constraint_violation(code: str, details: dict[str, Any], reason: str) -> None:
+    """DB制約違反を重要イベントとして記録する."""
+    logger.warning(
+        "重要イベント: DB制約違反 code=%s details=%s reason=%s",
+        code,
+        details,
+        reason,
+    )
+
+
 class CreateSeriesRequest(BaseModel):
     """Series 登録リクエスト."""
 
@@ -237,13 +270,29 @@ def _normalize_isbn(raw_isbn: str) -> str:
 def _raise_ndl_http_exception(error: Exception) -> NoReturn:
     """NDL連携失敗をHTTPExceptionへ正規化して送出する."""
     if isinstance(error, NdlClientError):
+        _log_external_api_failure(
+            status_code=error.status_code,
+            code=error.code,
+            message=error.message,
+            details=error.details,
+        )
         raise HTTPException(
             status_code=error.status_code,
             detail=error.to_http_exception_detail(),
         ) from error
 
     if isinstance(error, (httpx.TimeoutException, TimeoutError)):
-        logger.exception("NDL Search 呼び出しで予期しないタイムアウト例外が発生しました。")
+        _log_external_api_failure(
+            status_code=504,
+            code="NDL_API_TIMEOUT",
+            message="NDL API request timed out",
+            details={
+                "upstream": "NDL Search",
+                "externalFailure": True,
+                "failureType": "timeout",
+                "retryable": True,
+            },
+        )
         raise HTTPException(
             status_code=504,
             detail={
@@ -258,7 +307,17 @@ def _raise_ndl_http_exception(error: Exception) -> NoReturn:
             },
         ) from error
 
-    logger.exception("NDL Search 呼び出しで予期しない例外が発生しました。")
+    _log_external_api_failure(
+        status_code=502,
+        code="NDL_API_BAD_GATEWAY",
+        message="Failed to connect NDL API",
+        details={
+            "upstream": "NDL Search",
+            "externalFailure": True,
+            "failureType": "communication",
+            "retryable": False,
+        },
+    )
     raise HTTPException(
         status_code=502,
         detail={
@@ -593,7 +652,16 @@ def _extract_unregistered_series_candidates(
 def _find_or_create_series(
     connection: sqlite3.Connection, title: str, author: Optional[str], publisher: Optional[str]
 ) -> SeriesResponse:
-    """同一メタデータの Series を再利用し、無ければ新規作成する."""
+    """同一メタデータの Series を原子的に再利用し、無ければ新規作成する."""
+    connection.execute(
+        """
+        INSERT INTO series (title, author, publisher)
+        VALUES (?, ?, ?)
+        ON CONFLICT DO NOTHING;
+        """,
+        (title, author, publisher),
+    )
+
     row = connection.execute(
         """
         SELECT id, title, author, publisher
@@ -607,34 +675,14 @@ def _find_or_create_series(
         (title, author, publisher),
     ).fetchone()
 
-    if row is not None:
-        return SeriesResponse(id=row[0], title=row[1], author=row[2], publisher=row[3])
-
-    cursor = connection.execute(
-        """
-        INSERT INTO series (title, author, publisher)
-        VALUES (?, ?, ?);
-        """,
-        (title, author, publisher),
-    )
-    series_id = cursor.lastrowid
-    created_row = connection.execute(
-        """
-        SELECT id, title, author, publisher
-        FROM series
-        WHERE id = ?;
-        """,
-        (series_id,),
-    ).fetchone()
-
-    if created_row is None:
+    if row is None:
         raise HTTPException(status_code=500, detail="failed to create series")
 
     return SeriesResponse(
-        id=created_row[0],
-        title=created_row[1],
-        author=created_row[2],
-        publisher=created_row[3],
+        id=row[0],
+        title=row[1],
+        author=row[2],
+        publisher=row[3],
     )
 
 
@@ -687,6 +735,11 @@ def _build_integrity_error_response(exception: sqlite3.IntegrityError) -> JSONRe
     error_message = str(exception)
 
     if "UNIQUE constraint failed: volume.isbn" in error_message:
+        _log_db_constraint_violation(
+            code="VOLUME_ALREADY_EXISTS",
+            details={},
+            reason=error_message,
+        )
         return _build_error_response(
             status_code=409,
             code="VOLUME_ALREADY_EXISTS",
@@ -695,6 +748,11 @@ def _build_integrity_error_response(exception: sqlite3.IntegrityError) -> JSONRe
         )
 
     if "FOREIGN KEY constraint failed" in error_message:
+        _log_db_constraint_violation(
+            code="DB_CONSTRAINT_VIOLATION",
+            details={"constraint": "FOREIGN_KEY"},
+            reason=error_message,
+        )
         return _build_error_response(
             status_code=409,
             code="DB_CONSTRAINT_VIOLATION",
@@ -702,11 +760,17 @@ def _build_integrity_error_response(exception: sqlite3.IntegrityError) -> JSONRe
             details={"constraint": "FOREIGN_KEY"},
         )
 
+    details = {"reason": error_message}
+    _log_db_constraint_violation(
+        code="DB_CONSTRAINT_VIOLATION",
+        details=details,
+        reason=error_message,
+    )
     return _build_error_response(
         status_code=409,
         code="DB_CONSTRAINT_VIOLATION",
         message="Database constraint violated",
-        details={"reason": error_message},
+        details=details,
     )
 
 
@@ -877,9 +941,14 @@ async def create_volume(
                 metadata.cover_url,
             ),
         )
-    except sqlite3.IntegrityError:
+    except sqlite3.IntegrityError as error:
         existing_series_id = _get_existing_volume_series_id(connection, normalized_isbn)
         if existing_series_id is not None:
+            _log_db_constraint_violation(
+                code="VOLUME_ALREADY_EXISTS",
+                details={"isbn": normalized_isbn, "seriesId": existing_series_id},
+                reason=str(error),
+            )
             _raise_volume_already_exists(normalized_isbn, existing_series_id)
 
         raise
