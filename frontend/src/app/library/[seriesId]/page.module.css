@@ -152,9 +152,12 @@
 .volumeList {
   display: grid;
   gap: 12px;
+  grid-auto-columns: minmax(220px, 260px);
+  grid-auto-flow: column;
   list-style: none;
   margin: 0;
-  padding: 0;
+  overflow-x: auto;
+  padding: 0 2px 4px;
 }
 
 .volumeListItem {
@@ -589,6 +592,7 @@
     justify-items: flex-start;
   }
 
+  .volumeList,
   .candidateList {
     grid-auto-columns: minmax(190px, 72vw);
   }
