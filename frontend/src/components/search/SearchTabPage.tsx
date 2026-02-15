@@ -532,6 +532,88 @@ export function SearchTabPage() {
     }
   };
 
+  const candidateEntries = candidates.map((candidate, index) => ({
+    candidate,
+    candidateKey: getCandidateKey(candidate, index),
+  }));
+  const pendingCandidateEntries = candidateEntries.filter(
+    ({ candidate }) => candidate.owned !== true
+  );
+  const ownedCandidateEntries = candidateEntries.filter(
+    ({ candidate }) => candidate.owned === true
+  );
+
+  const renderCandidateItem = (candidate: CatalogSearchCandidate, candidateKey: string) => {
+    const canRegisterCandidate = candidate.owned === false && candidate.isbn !== null;
+    const isCurrentCandidateRegistering = registeringCandidateKey === candidateKey;
+    const isRegisterDisabled = registeringCandidateKey !== null || !canRegisterCandidate;
+    const ownedBadgeClassName =
+      candidate.owned === true
+        ? `${styles.ownedBadge} ${styles.ownedBadgeOwned}`
+        : candidate.owned === false
+          ? `${styles.ownedBadge} ${styles.ownedBadgeNotOwned}`
+          : `${styles.ownedBadge} ${styles.ownedBadgeUnknown}`;
+    const registerFeedback = registerFeedbackByCandidateKey[candidateKey];
+    const registerFeedbackClassName =
+      registerFeedback === undefined
+        ? null
+        : registerFeedback.tone === "success"
+          ? `${styles.registerFeedbackPanel} ${styles.registerFeedbackSuccess}`
+          : registerFeedback.tone === "info"
+            ? `${styles.registerFeedbackPanel} ${styles.registerFeedbackInfo}`
+            : `${styles.registerFeedbackPanel} ${styles.registerFeedbackError}`;
+
+    return (
+      <li className={styles.resultItem} key={candidateKey}>
+        <article className={styles.resultCard}>
+          <CandidateCover coverUrl={candidate.cover_url} title={candidate.title} />
+          <div className={styles.resultContent}>
+            <div className={styles.resultHeading}>
+              <h3 className={styles.resultTitle}>{candidate.title}</h3>
+              <span className={ownedBadgeClassName}>{getCandidateOwnedLabel(candidate)}</span>
+            </div>
+            <dl className={styles.resultMetaList}>
+              <div className={styles.resultMetaRow}>
+                <dt className={styles.resultMetaLabel}>著者</dt>
+                <dd className={styles.resultMetaValue}>{candidate.author ?? "不明"}</dd>
+              </div>
+              <div className={styles.resultMetaRow}>
+                <dt className={styles.resultMetaLabel}>出版社</dt>
+                <dd className={styles.resultMetaValue}>{candidate.publisher ?? "不明"}</dd>
+              </div>
+            </dl>
+            <p className={styles.resultMeta}>
+              ISBN: {candidate.isbn ?? "不明"} / 巻数: {candidate.volume_number ?? "不明"}
+            </p>
+            <p className={styles.statusDetail}>{getRegistrationAvailabilityLabel(candidate)}</p>
+            <p className={styles.registerActionRow}>
+              <button
+                className={styles.registerActionButton}
+                disabled={isRegisterDisabled}
+                onClick={() => {
+                  void registerCandidate(candidate, candidateKey);
+                }}
+                type="button"
+              >
+                {getRegisterButtonLabel(candidate, isCurrentCandidateRegistering)}
+              </button>
+            </p>
+            {registerFeedbackClassName !== null && (
+              <div
+                aria-live="polite"
+                className={registerFeedbackClassName}
+                role={registerFeedback?.tone === "error" ? "alert" : "status"}
+              >
+                <p className={styles.registerFeedbackTitle}>{registerFeedback.title}</p>
+                <p className={styles.registerFeedbackMessage}>{registerFeedback.message}</p>
+              </div>
+            )}
+          </div>
+        </article>
+      </li>
+    );
+  };
+
   return (
     <main className={styles.page}>
       <div className={styles.container}>
@@ -593,94 +675,37 @@ export function SearchTabPage() {
                 <p className={styles.resultSummary}>
                   「{displayedQuery}」の検索結果: {candidates.length} 件
                 </p>
-                <ul className={styles.resultList}>
-                  {candidates.map((candidate, index) => {
-                    const candidateKey = getCandidateKey(candidate, index);
-                    const canRegisterCandidate =
-                      candidate.owned === false && candidate.isbn !== null;
-                    const isCurrentCandidateRegistering = registeringCandidateKey === candidateKey;
-                    const isRegisterDisabled =
-                      registeringCandidateKey !== null || !canRegisterCandidate;
-                    const ownedBadgeClassName =
-                      candidate.owned === true
-                        ? `${styles.ownedBadge} ${styles.ownedBadgeOwned}`
-                        : candidate.owned === false
-                          ? `${styles.ownedBadge} ${styles.ownedBadgeNotOwned}`
-                          : `${styles.ownedBadge} ${styles.ownedBadgeUnknown}`;
-                    const registerFeedback = registerFeedbackByCandidateKey[candidateKey];
-                    const registerFeedbackClassName =
-                      registerFeedback === undefined
-                        ? null
-                        : registerFeedback.tone === "success"
-                          ? `${styles.registerFeedbackPanel} ${styles.registerFeedbackSuccess}`
-                          : registerFeedback.tone === "info"
-                            ? `${styles.registerFeedbackPanel} ${styles.registerFeedbackInfo}`
-                            : `${styles.registerFeedbackPanel} ${styles.registerFeedbackError}`;
+                <div className={styles.resultRows}>
+                  <section className={styles.resultRowSection}>
+                    <div className={styles.resultRowHeader}>
+                      <h3 className={styles.resultRowTitle}>候補</h3>
+                      <p className={styles.resultRowCount}>{pendingCandidateEntries.length} 件</p>
+                    </div>
+                    {pendingCandidateEntries.length === 0 ? (
+                      <p className={styles.resultRowEmpty}>候補はありません。</p>
+                    ) : (
+                      <ul className={styles.horizontalResultList}>
+                        {pendingCandidateEntries.map(({ candidate, candidateKey }) =>
+                          renderCandidateItem(candidate, candidateKey)
+                        )}
+                      </ul>
+                    )}
+                  </section>
 
-                    return (
-                      <li className={styles.resultItem} key={candidateKey}>
-                        <article className={styles.resultCard}>
-                          <CandidateCover coverUrl={candidate.cover_url} title={candidate.title} />
-                          <div className={styles.resultContent}>
-                            <div className={styles.resultHeading}>
-                              <h3 className={styles.resultTitle}>{candidate.title}</h3>
-                              <span className={ownedBadgeClassName}>
-                                {getCandidateOwnedLabel(candidate)}
-                              </span>
-                            </div>
-                            <dl className={styles.resultMetaList}>
-                              <div className={styles.resultMetaRow}>
-                                <dt className={styles.resultMetaLabel}>著者</dt>
-                                <dd className={styles.resultMetaValue}>
-                                  {candidate.author ?? "不明"}
-                                </dd>
-                              </div>
-                              <div className={styles.resultMetaRow}>
-                                <dt className={styles.resultMetaLabel}>出版社</dt>
-                                <dd className={styles.resultMetaValue}>
-                                  {candidate.publisher ?? "不明"}
-                                </dd>
-                              </div>
-                            </dl>
-                            <p className={styles.resultMeta}>
-                              ISBN: {candidate.isbn ?? "不明"} / 巻数:{" "}
-                              {candidate.volume_number ?? "不明"}
-                            </p>
-                            <p className={styles.statusDetail}>
-                              {getRegistrationAvailabilityLabel(candidate)}
-                            </p>
-                            <p className={styles.registerActionRow}>
-                              <button
-                                className={styles.registerActionButton}
-                                disabled={isRegisterDisabled}
-                                onClick={() => {
-                                  void registerCandidate(candidate, candidateKey);
-                                }}
-                                type="button"
-                              >
-                                {getRegisterButtonLabel(candidate, isCurrentCandidateRegistering)}
-                              </button>
-                            </p>
-                            {registerFeedbackClassName !== null && (
-                              <div
-                                aria-live="polite"
-                                className={registerFeedbackClassName}
-                                role={registerFeedback?.tone === "error" ? "alert" : "status"}
-                              >
-                                <p className={styles.registerFeedbackTitle}>
-                                  {registerFeedback.title}
-                                </p>
-                                <p className={styles.registerFeedbackMessage}>
-                                  {registerFeedback.message}
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        </article>
-                      </li>
-                    );
-                  })}
-                </ul>
+                  {ownedCandidateEntries.length > 0 && (
+                    <section className={styles.resultRowSection}>
+                      <div className={styles.resultRowHeader}>
+                        <h3 className={styles.resultRowTitle}>登録済み</h3>
+                        <p className={styles.resultRowCount}>{ownedCandidateEntries.length} 件</p>
+                      </div>
+                      <ul className={styles.horizontalResultList}>
+                        {ownedCandidateEntries.map(({ candidate, candidateKey }) =>
+                          renderCandidateItem(candidate, candidateKey)
+                        )}
+                      </ul>
+                    </section>
+                  )}
+                </div>
               </>
             )}
 

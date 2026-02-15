@@ -207,6 +207,7 @@
 
 * 候補抽出はベストエフォート  
 * 誤判定リスクは「確認モーダル」で吸収する
+* MVPでは「自動判定で完全一致を保証する」ことは目標にしない（過剰品質の実装に逸れない）
 
 ### **6.5.2 除外フィルタ（採用）**
 
@@ -835,6 +836,99 @@ type Owned = true | false | "unknown";
 ```
 
 `cover_url` は参照先URLを返すための値であり、画像バイナリはAPIレスポンスに含めない。
+
+#### **8.2.4 GET /api/series/{series_id}/candidates（作品詳細: 未登録候補取得）**
+
+作品詳細ページの上段（未登録巻候補）で使用するエンドポイント。  
+レスポンスは **BookDTO 配列**で返し、サーバー側で未登録候補の抽出・除外フィルタ・重複排除を完了した状態を返す。
+
+**HTTPメソッド/パス**
+
+* `GET /api/series/{series_id}/candidates`
+
+**パスパラメータ**
+
+| パラメータ | 型 | 必須 | 説明 |
+|---|---|---|---|
+| `series_id` | number | 必須 | 取得対象のSeries ID |
+
+**レスポンス（200 OK）**
+
+* 配列で返す。1要素が1候補。型は `BookDTO`。  
+* 候補抽出時に `6.5.2` の除外フィルタを適用済み。  
+* 候補抽出時に `6.5.3` の重複排除（同一ISBNの1件化）を適用済み。  
+* 既に `volume` テーブルに存在するISBNは除外済み（同一Series/他Seriesを問わず除外）。  
+* 返却される候補はすべて「登録可能な候補」のみで、`isbn` は必ず13桁の正規化済み値。
+
+| フィールド | 型 | `null` | 説明 |
+|---|---|---|---|
+| `title` | string | 不可 | 候補タイトル |
+| `author` | string | 可 | 著者名 |
+| `publisher` | string | 可 | 出版社名 |
+| `isbn` | string | 不可 | ISBN-13（正規化済み、半角数字13桁） |
+| `volume_number` | number | 可 | 巻数（取得できない場合は `null`） |
+| `cover_url` | string | 可 | 表紙URL（取得できない場合は `null`） |
+
+**並び順（固定）**
+
+1. `volume_number` 昇順（`null` は末尾）  
+2. 同巻数内は `isbn` 昇順
+
+**レスポンス例（200 OK）**
+
+```json
+[
+  {
+    "title": "葬送のフリーレン",
+    "author": "山田鐘人",
+    "publisher": "小学館",
+    "isbn": "9784098515762",
+    "volume_number": 1,
+    "cover_url": "https://example.com/covers/frieren-1.jpg"
+  },
+  {
+    "title": "葬送のフリーレン",
+    "author": "山田鐘人",
+    "publisher": "小学館",
+    "isbn": "9784098515854",
+    "volume_number": 2,
+    "cover_url": "https://example.com/covers/frieren-2.jpg"
+  },
+  {
+    "title": "葬送のフリーレン",
+    "author": "山田鐘人",
+    "publisher": "小学館",
+    "isbn": "9784098515922",
+    "volume_number": null,
+    "cover_url": null
+  }
+]
+```
+
+候補が存在しない場合は空配列 `[]` を返す。
+
+**エラー**
+
+* `series_id` が存在しない場合は `404`（`SERIES_NOT_FOUND`）  
+* 4xx/5xx の形式は `docs/DEVELOPMENT_RULES.md` の「APIエラーレスポンス規約」に従う
+
+#### **8.2.5 BookDTO（/api/series/{series_id}/candidates 用）**
+
+`GET /api/series/{series_id}/candidates` は `BookDTO[]` で返す。  
+`BookDTO` には `owned` を含めない（未登録候補のみ返すため）。
+
+フロント実装時の型定義例（TypeScript）:
+
+```ts
+type BookDTO = {
+  title: string;
+  author: string | null;
+  publisher: string | null;
+  isbn: string;
+  volume_number: number | null;
+  cover_url: string | null;
+};
+```
 
 ### **エラー形式（統一）**
 
