@@ -6,6 +6,31 @@ from fastapi.testclient import TestClient
 from src import main
 
 
+@pytest.mark.parametrize(
+    ("requested_limit", "expected_upstream_limit"),
+    [
+        (7, 35),
+        (40, 100),
+    ],
+)
+def test_search_catalog_by_keyword_uses_wider_upstream_fetch_limit(
+    monkeypatch, requested_limit: int, expected_upstream_limit: int
+):
+    """検索精度向上のため、上流には広めの件数で問い合わせる."""
+    called = {}
+
+    def fake_search_by_keyword(q: str, limit: int, page: int) -> list[main.CatalogSearchCandidate]:
+        called.update({"q": q, "limit": limit, "page": page})
+        return []
+
+    monkeypatch.setattr(main, "search_by_keyword", fake_search_by_keyword)
+
+    candidates = main._search_catalog_by_keyword("候補", requested_limit)
+
+    assert candidates == []
+    assert called == {"q": "候補", "limit": expected_upstream_limit, "page": 1}
+
+
 def test_search_catalog_returns_candidates_with_status_200(monkeypatch, tmp_path):
     """外部カタログ検索APIが 200 で候補一覧DTOを返す."""
     db_path = tmp_path / "library.db"
@@ -156,6 +181,168 @@ def test_search_catalog_assigns_owned_status_from_registered_isbn(monkeypatch, t
             "owned": "unknown",
         },
     ]
+
+
+def test_search_catalog_filters_exclusion_terms_and_prioritizes_relevant_titles(
+    monkeypatch, tmp_path
+):
+    """検索結果から除外語候補を落とし、関連度の高いタイトルを先頭に並べる."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    def fake_search_catalog_by_keyword(q: str, limit: int) -> list[main.CatalogSearchCandidate]:
+        assert q == "鬼滅の刃"
+        assert limit == 3
+        return [
+            main.CatalogSearchCandidate(
+                title="鬼滅の刃 特装版",
+                author="吾峠呼世晴",
+                publisher="集英社",
+                isbn="9780000000009",
+                volume_number=1,
+                cover_url=None,
+                owned="unknown",
+            ),
+            main.CatalogSearchCandidate(
+                title="無関係作品",
+                author="別作者",
+                publisher="別出版社",
+                isbn="9780000000008",
+                volume_number=1,
+                cover_url=None,
+                owned="unknown",
+            ),
+            main.CatalogSearchCandidate(
+                title="鬼滅の刃 外伝",
+                author="吾峠呼世晴",
+                publisher="集英社",
+                isbn="9780000000002",
+                volume_number=2,
+                cover_url="https://example.com/covers/kimetsu-gaiden.jpg",
+                owned="unknown",
+            ),
+            main.CatalogSearchCandidate(
+                title="鬼滅の刃",
+                author="吾峠呼世晴",
+                publisher="集英社",
+                isbn="9780000000001",
+                volume_number=1,
+                cover_url="https://example.com/covers/kimetsu-1.jpg",
+                owned="unknown",
+            ),
+        ]
+
+    monkeypatch.setattr(main, "_search_catalog_by_keyword", fake_search_catalog_by_keyword)
+
+    with TestClient(main.app) as client:
+        response = client.get("/api/catalog/search", params={"q": "鬼滅の刃", "limit": 3})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["title"] for item in payload] == ["鬼滅の刃", "鬼滅の刃 外伝"]
+    assert all("特装版" not in item["title"] for item in payload)
+
+
+def test_search_catalog_deduplicates_same_isbn_and_keeps_richer_candidate(monkeypatch, tmp_path):
+    """同一ISBNが重複した場合、情報量が多い候補を残して1件化する."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    def fake_search_catalog_by_keyword(q: str, limit: int) -> list[main.CatalogSearchCandidate]:
+        assert q == "呪術廻戦"
+        assert limit == 5
+        return [
+            main.CatalogSearchCandidate(
+                title="呪術廻戦",
+                author=None,
+                publisher=None,
+                isbn="9780000000010",
+                volume_number=None,
+                cover_url=None,
+                owned="unknown",
+            ),
+            main.CatalogSearchCandidate(
+                title="呪術廻戦",
+                author="芥見下々",
+                publisher="集英社",
+                isbn="9780000000010",
+                volume_number=1,
+                cover_url="https://example.com/covers/jujutsu-1.jpg",
+                owned="unknown",
+            ),
+            main.CatalogSearchCandidate(
+                title="呪術廻戦 0",
+                author="芥見下々",
+                publisher="集英社",
+                isbn="9780000000011",
+                volume_number=0,
+                cover_url="https://example.com/covers/jujutsu-0.jpg",
+                owned="unknown",
+            ),
+        ]
+
+    monkeypatch.setattr(main, "_search_catalog_by_keyword", fake_search_catalog_by_keyword)
+
+    with TestClient(main.app) as client:
+        response = client.get("/api/catalog/search", params={"q": "呪術廻戦", "limit": 5})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 2
+    assert payload[0]["isbn"] == "9780000000010"
+    assert payload[0]["volume_number"] == 1
+    assert payload[0]["cover_url"] == "https://example.com/covers/jujutsu-1.jpg"
+
+
+def test_search_catalog_prioritizes_requested_volume_number(monkeypatch, tmp_path):
+    """クエリに巻数指定がある場合は一致巻を優先して返す."""
+    db_path = tmp_path / "library.db"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+
+    def fake_search_catalog_by_keyword(q: str, limit: int) -> list[main.CatalogSearchCandidate]:
+        assert q == "葬送のフリーレン 3巻"
+        assert limit == 3
+        return [
+            main.CatalogSearchCandidate(
+                title="葬送のフリーレン",
+                author="山田鐘人",
+                publisher="小学館",
+                isbn="9780000000021",
+                volume_number=1,
+                cover_url=None,
+                owned="unknown",
+            ),
+            main.CatalogSearchCandidate(
+                title="葬送のフリーレン",
+                author="山田鐘人",
+                publisher="小学館",
+                isbn="9780000000023",
+                volume_number=3,
+                cover_url=None,
+                owned="unknown",
+            ),
+            main.CatalogSearchCandidate(
+                title="葬送のフリーレン",
+                author="山田鐘人",
+                publisher="小学館",
+                isbn="9780000000022",
+                volume_number=2,
+                cover_url=None,
+                owned="unknown",
+            ),
+        ]
+
+    monkeypatch.setattr(main, "_search_catalog_by_keyword", fake_search_catalog_by_keyword)
+
+    with TestClient(main.app) as client:
+        response = client.get(
+            "/api/catalog/search", params={"q": "葬送のフリーレン 3巻", "limit": 3}
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload[0]["volume_number"] == 3
+    assert [item["volume_number"] for item in payload] == [3, 1, 2]
 
 
 def test_lookup_catalog_returns_single_candidate_with_status_200(monkeypatch, tmp_path):

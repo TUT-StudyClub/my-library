@@ -50,6 +50,8 @@ DEFAULT_ERROR_CODE_BY_STATUS = {
     status.HTTP_503_SERVICE_UNAVAILABLE: "SERVICE_UNAVAILABLE",
     status.HTTP_504_GATEWAY_TIMEOUT: "GATEWAY_TIMEOUT",
 }
+CATALOG_SEARCH_UPSTREAM_FETCH_MULTIPLIER = 5
+CATALOG_SEARCH_UPSTREAM_FETCH_MAX = 100
 SERIES_CANDIDATES_SEARCH_LIMIT = 100
 SERIES_CANDIDATE_EXCLUSION_TERMS = [
     "特装版",
@@ -343,8 +345,12 @@ def _fetch_catalog_volume_metadata(isbn: str) -> CatalogVolumeMetadata:
 
 def _search_catalog_by_keyword(q: str, limit: int) -> list[CatalogSearchCandidate]:
     """キーワードでNDL Searchを検索し、候補一覧を返す."""
+    upstream_fetch_limit = min(
+        CATALOG_SEARCH_UPSTREAM_FETCH_MAX,
+        max(limit, limit * CATALOG_SEARCH_UPSTREAM_FETCH_MULTIPLIER),
+    )
     try:
-        return search_by_keyword(q=q, limit=limit, page=1)
+        return search_by_keyword(q=q, limit=upstream_fetch_limit, page=1)
     except ValueError as error:
         raise HTTPException(
             status_code=400,
@@ -545,6 +551,181 @@ def _contains_exclusion_keyword(
 
     searchable_text = " ".join(normalized_text_parts)
     return any(exclusion_keyword in searchable_text for exclusion_keyword in exclusion_keywords)
+
+
+def _build_catalog_search_query_tokens(query: str) -> tuple[str, ...]:
+    """検索クエリから関連度判定用トークンを構築する."""
+    raw_tokens = re.split(r"[\s　]+", query)
+    normalized_tokens: list[str] = []
+    seen_tokens: set[str] = set()
+
+    for raw_token in raw_tokens:
+        normalized_token = _normalize_text_for_match(raw_token)
+        if normalized_token is None or normalized_token in seen_tokens:
+            continue
+
+        seen_tokens.add(normalized_token)
+        normalized_tokens.append(normalized_token)
+
+    return tuple(normalized_tokens)
+
+
+def _extract_requested_volume_numbers(query: str) -> set[int]:
+    """検索クエリから明示された巻数条件を抽出する."""
+    normalized_query = unicodedata.normalize("NFKC", query)
+    return {int(number_text) for number_text in re.findall(r"([0-9]{1,3})\s*巻", normalized_query)}
+
+
+def _calculate_catalog_candidate_score(
+    candidate: CatalogSearchCandidate,
+    query_tokens: Sequence[str],
+    requested_volume_numbers: set[int],
+) -> tuple[int, int]:
+    """検索クエリに対する候補の関連度スコアを算出する."""
+    normalized_title = _normalize_text_for_match(candidate.title) or ""
+    normalized_author = _normalize_text_for_match(candidate.author) or ""
+    normalized_publisher = _normalize_text_for_match(candidate.publisher) or ""
+
+    score = 0
+    matched_token_count = 0
+    for query_token in query_tokens:
+        token_score = 0
+        if normalized_title == query_token:
+            token_score = 140
+        elif normalized_title.startswith(query_token):
+            token_score = 110
+        elif query_token in normalized_title:
+            token_score = 80
+        elif query_token in normalized_author:
+            token_score = 45
+        elif query_token in normalized_publisher:
+            token_score = 35
+
+        if token_score > 0:
+            matched_token_count += 1
+
+        score += token_score
+
+    score += matched_token_count * 20
+
+    if candidate.isbn is not None:
+        score += 18
+    if candidate.volume_number is not None:
+        score += 4
+    if candidate.cover_url is not None:
+        score += 6
+    if candidate.author is not None:
+        score += 4
+    if candidate.publisher is not None:
+        score += 3
+
+    if len(requested_volume_numbers) > 0:
+        if candidate.volume_number in requested_volume_numbers:
+            score += 120
+        elif candidate.volume_number is None:
+            score -= 20
+        else:
+            score -= 40
+
+    return score, matched_token_count
+
+
+def _catalog_candidate_quality_key(
+    candidate: CatalogSearchCandidate,
+) -> tuple[bool, bool, bool, bool]:
+    """同一ISBNで比較する際の品質キーを返す."""
+    return (
+        candidate.cover_url is not None,
+        candidate.volume_number is not None,
+        candidate.author is not None,
+        candidate.publisher is not None,
+    )
+
+
+def _optimize_catalog_search_candidates(
+    query: str,
+    candidates: Sequence[CatalogSearchCandidate],
+    limit: int,
+) -> list[CatalogSearchCandidate]:
+    """検索タブ向けに候補のノイズ除去・重複排除・関連度順整列を行う."""
+    query_tokens = _build_catalog_search_query_tokens(query)
+    requested_volume_numbers = _extract_requested_volume_numbers(query)
+    exclusion_keywords = _build_series_candidate_exclusion_keywords()
+
+    deduplicated_entries_by_isbn: dict[str, tuple[CatalogSearchCandidate, int, int, int]] = {}
+    unknown_isbn_entries: list[tuple[CatalogSearchCandidate, int, int, int]] = []
+
+    for index, candidate in enumerate(candidates):
+        if _contains_exclusion_keyword(candidate, exclusion_keywords):
+            continue
+
+        score, matched_token_count = _calculate_catalog_candidate_score(
+            candidate,
+            query_tokens=query_tokens,
+            requested_volume_numbers=requested_volume_numbers,
+        )
+
+        if candidate.isbn is None:
+            unknown_isbn_entries.append((candidate, score, matched_token_count, index))
+            continue
+
+        existing_entry = deduplicated_entries_by_isbn.get(candidate.isbn)
+        if existing_entry is None:
+            deduplicated_entries_by_isbn[candidate.isbn] = (
+                candidate,
+                score,
+                matched_token_count,
+                index,
+            )
+            continue
+
+        (
+            existing_candidate,
+            existing_score,
+            existing_matched_token_count,
+            existing_index,
+        ) = existing_entry
+        should_replace = False
+        if score > existing_score:
+            should_replace = True
+        elif score == existing_score and matched_token_count > existing_matched_token_count:
+            should_replace = True
+        elif score == existing_score and matched_token_count == existing_matched_token_count:
+            if _catalog_candidate_quality_key(candidate) > _catalog_candidate_quality_key(
+                existing_candidate
+            ):
+                should_replace = True
+            elif (
+                _catalog_candidate_quality_key(candidate)
+                == _catalog_candidate_quality_key(existing_candidate)
+                and index < existing_index
+            ):
+                should_replace = True
+
+        if should_replace:
+            deduplicated_entries_by_isbn[candidate.isbn] = (
+                candidate,
+                score,
+                matched_token_count,
+                index,
+            )
+
+    optimized_entries = list(deduplicated_entries_by_isbn.values()) + unknown_isbn_entries
+    if len(optimized_entries) == 0:
+        return []
+
+    if any(matched_token_count > 0 for _, _, matched_token_count, _ in optimized_entries):
+        optimized_entries = [entry for entry in optimized_entries if entry[2] > 0]
+
+    optimized_entries.sort(
+        key=lambda entry: (
+            -entry[1],
+            -entry[2],
+            entry[3],
+        )
+    )
+
+    return [entry[0] for entry in optimized_entries[:limit]]
 
 
 def _pick_preferred_candidate(
@@ -1121,13 +1302,18 @@ async def search_catalog(
         _search_catalog_by_keyword, q, limit
     )
     candidate_dtos = [_to_catalog_search_candidate_dto(candidate) for candidate in candidates]
+    optimized_candidates = _optimize_catalog_search_candidates(
+        query=q,
+        candidates=candidate_dtos,
+        limit=limit,
+    )
     owned_isbn_set = _fetch_registered_isbn_set(
         connection=connection,
         candidate_isbns=[
-            candidate.isbn for candidate in candidate_dtos if candidate.isbn is not None
+            candidate.isbn for candidate in optimized_candidates if candidate.isbn is not None
         ],
     )
-    return [_attach_owned_status(candidate, owned_isbn_set) for candidate in candidate_dtos]
+    return [_attach_owned_status(candidate, owned_isbn_set) for candidate in optimized_candidates]
 
 
 @app.get("/api/catalog/lookup", response_model=CatalogSearchCandidate)
